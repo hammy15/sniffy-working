@@ -110,7 +110,9 @@ function App() {
         Generate Plan of Correction
       </button>
 
-    </div>
+       </div>  // 
+  );
+}
   );
 }
 
