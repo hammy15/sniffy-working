@@ -47,9 +47,29 @@ function App() {
       <p>You are logged in as <strong>{user.email}</strong></p>
       <button onClick={handleLogout}>Log Out</button>
           <hr style={{ margin: '2rem 0' }} />
+            <hr style={{ margin: '2rem 0' }} />
       <h2>Paste Your 2567 Text</h2>
       <textarea
         rows={10}
+        style={{ width: '100%', padding: '1rem', fontFamily: 'monospace' }}
+        placeholder="Paste full 2567 deficiency narrative here..."
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+      ></textarea>
+
+      <button style={{ marginTop: '1rem' }} onClick={handleGeneratePOC}>
+        Generate Plan of Correction
+      </button>
+
+      {output && (
+        <div style={{ marginTop: '2rem', background: '#f5f5f5', padding: '1rem' }}>
+          <h3>Detected F-tags:</h3>
+          <p>{ftags.join(', ')}</p>
+          <h3>Suggested Plan of Correction:</h3>
+          <pre>{output}</pre>
+        </div>
+      )}
+
         style={{ width: '100%', padding: '1rem', fontFamily: 'monospace' }}
         placeholder="Paste full 2567 deficiency narrative here..."
       ></textarea>
