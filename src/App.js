@@ -1,12 +1,23 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import Login from './Login';
+import Register from './Register';
+import { auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 function App() {
-  return (
-    <div style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
-      <h1>Welcome to SNIFFY 🧠</h1>
-      <p>This is your live app. Next step: add login and AI magic.</p>
-    </div>
-  );
-}
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('login'); // login or register
 
-export default App;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
+  const handleSuccess = () => {
+    setUser(auth.curr
