@@ -66,10 +66,21 @@ function App() {
         value={input}
         onChange={(e) => setInput(e.target.value)}
       ></textarea>
+
       <button style={{ marginTop: '1rem' }} onClick={handleGeneratePOC}>
         Generate Plan of Correction
       </button>
 
       {output && (
         <div style={{ marginTop: '2rem', background: '#f5f5f5', padding: '1rem' }}>
-          <h3>Det
+          <h3>Detected F-tags:</h3>
+          <p>{ftags.join(', ')}</p>
+          <h3>Suggested Plan of Correction:</h3>
+          <pre>{output}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
