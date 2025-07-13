@@ -6,7 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('login'); // login or register
+  const [view, setView] = useState('login');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -20,4 +20,34 @@ function App() {
   };
 
   const handleSuccess = () => {
-    setUser(auth.curr
+    setUser(auth.currentUser);
+  };
+
+  if (!user) {
+    return (
+      <div style={{ padding: '2rem' }}>
+        {view === 'login' ? (
+          <>
+            <Login onLogin={handleSuccess} />
+            <p>Need an account? <button onClick={() => setView('register')}>Register</button></p>
+          </>
+        ) : (
+          <>
+            <Register onRegister={handleSuccess} />
+            <p>Already have an account? <button onClick={() => setView('login')}>Login</button></p>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '2rem' }}>
+      <h1>Welcome to SNIFFY 🧠</h1>
+      <p>You are logged in as <strong>{user.email}</strong></p>
+      <button onClick={handleLogout}>Log Out</button>
+    </div>
+  );
+}
+
+export default App;
