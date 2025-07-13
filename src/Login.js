@@ -11,7 +11,7 @@ export default function Login({ onLogin }) {
     e.preventDefault();
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      onLogin(); // callback for successful login
+      onLogin();
     } catch (err) {
       setError(err.message);
     }
