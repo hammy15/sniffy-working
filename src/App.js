@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import Login from './Login';
 import Register from './Register';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { generatePOC } from './openai';
+import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -11,6 +12,7 @@ function App() {
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [ftags, setFtags] = useState([]);
+  const [history, setHistory] = useState([]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
@@ -18,6 +20,18 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (user) {
+        const q = query(collection(db, 'pocs'), where('uid', '==', user.uid));
+        const snapshot = await getDocs(q);
+        const docs = snapshot.docs.map(doc => doc.data());
+        setHistory(docs);
+      }
+    };
+    fetchHistory();
+  }, [user]);
 
   const handleLogout = () => {
     signOut(auth);
@@ -30,12 +44,27 @@ function App() {
   const handleGeneratePOC = async () => {
     const tags = input.match(/F\d{3,4}/g) || [];
     setFtags(tags);
-
     setOutput("🧠 Generating Plan of Correction... please wait...");
 
     try {
       const result = await generatePOC(input, tags);
       setOutput(result);
+
+      await addDoc(collection(db, 'pocs'), {
+        uid: user.uid,
+        email: user.email,
+        timestamp: new Date(),
+        input,
+        fTags: tags,
+        poc: result
+      });
+
+      // Refresh history after saving
+      const q = query(collection(db, 'pocs'), where('uid', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const docs = snapshot.docs.map(doc => doc.data());
+      setHistory(docs);
+
     } catch (err) {
       setOutput("❌ Error generating POC: " + err.message);
     }
@@ -85,6 +114,21 @@ function App() {
           <p>{ftags.join(', ') || 'None found'}</p>
           <h3>Suggested Plan of Correction:</h3>
           <pre style={{ whiteSpace: 'pre-wrap' }}>{output}</pre>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div style={{ marginTop: '3rem' }}>
+          <h3>Your Previous Plans of Correction</h3>
+          <ul>
+            {history.map((item, i) => (
+              <li key={i} style={{ marginBottom: '1rem' }}>
+                <strong>{new Date(item.timestamp.seconds * 1000).toLocaleString()}</strong><br />
+                <em>F-tags: {item.fTags?.join(', ')}</em>
+                <pre style={{ background: '#eee', padding: '1rem' }}>{item.poc}</pre>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
