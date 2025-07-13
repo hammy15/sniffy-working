@@ -1,38 +1,17 @@
 export async function generatePOC(inputText, fTags) {
-  const prompt = `
-You are a skilled nursing facility compliance consultant.
-Given the following deficiency narrative and F-tags, generate a CMS-compliant Plan of Correction including:
-- Root cause
-- Corrective actions
-- Monitoring plan
-- Completion date
-
-F-tags: ${fTags.join(', ')}
-Narrative:
-${inputText}
-`;
-
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const res = await fetch('/api/generatePOC', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.REACT_APP_OPENAI_API_KEY || process.env.OPENAI_API_KEY}`
+      'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: 'You are a compliance expert writing POCs for SNFs.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.2
-    })
+    body: JSON.stringify({ inputText, fTags })
   });
 
-  const data = await response.json();
+  const data = await res.json();
 
   if (data.error) {
-    throw new Error(data.error.message);
+    throw new Error(data.error);
   }
 
-  return data.choices?.[0]?.message?.content || 'No response from OpenAI.';
+  return data.result;
 }
