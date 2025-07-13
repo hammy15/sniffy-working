@@ -2,12 +2,12 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: "PASTE_YOUR_REAL_API_KEY_HERE",
-  authDomain: "sniffy-app.firebaseapp.com",
-  projectId: "sniffy-app",
-  storageBucket: "sniffy-app.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDl6Hitkmws_aPWBX4yF_uYrnN8CpHgS2k",
+  authDomain: "sniffy-app-be555.firebaseapp.com",
+  projectId: "sniffy-app-be555",
+  storageBucket: "sniffy-app-be555.firebasestorage.app",
+  messagingSenderId: "219824031376",
+  appId: "1:219824031376:web:428056bea4fdf638117a15"
 };
 
 const app = initializeApp(firebaseConfig);
