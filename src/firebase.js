@@ -1,4 +1,2 @@
-apiKey: "AIzaSyB3...abc",
-authDomain: "sniffy-app.firebaseapp.com",
-projectId: "sniffy-app",
-...
+import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';  //
