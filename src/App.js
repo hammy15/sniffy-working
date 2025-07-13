@@ -5,6 +5,19 @@ import { auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 
 function App() {
+  const [input, setInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [ftags, setFtags] = useState([]);
+
+  const handleGeneratePOC = () => {
+    const tags = input.match(/F\d{3,4}/g) || [];
+    setFtags(tags);
+
+    // 👇 TEMP fake output — we’ll replace this with OpenAI in the next step
+    const fakePOC = `Based on tags: ${tags.join(', ')}, here is your sample Plan of Correction...\n\n(We will generate this with AI in the next step.)`;
+    setOutput(fakePOC);
+  };
+
   const [user, setUser] = useState(null);
   const [view, setView] = useState('login');
 
