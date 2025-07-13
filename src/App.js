@@ -46,6 +46,17 @@ function App() {
       <h1>Welcome to SNIFFY 🧠</h1>
       <p>You are logged in as <strong>{user.email}</strong></p>
       <button onClick={handleLogout}>Log Out</button>
+          <hr style={{ margin: '2rem 0' }} />
+      <h2>Paste Your 2567 Text</h2>
+      <textarea
+        rows={10}
+        style={{ width: '100%', padding: '1rem', fontFamily: 'monospace' }}
+        placeholder="Paste full 2567 deficiency narrative here..."
+      ></textarea>
+      <button style={{ marginTop: '1rem' }}>
+        Generate Plan of Correction
+      </button>
+
     </div>
   );
 }
