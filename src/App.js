@@ -1,10 +1,9 @@
-import { generatePOC } from './openai';
-
 import React, { useState, useEffect } from 'react';
 import Login from './Login';
 import Register from './Register';
 import { auth } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { generatePOC } from './openai';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -28,11 +27,18 @@ function App() {
     setUser(auth.currentUser);
   };
 
-  const handleGeneratePOC = () => {
+  const handleGeneratePOC = async () => {
     const tags = input.match(/F\d{3,4}/g) || [];
     setFtags(tags);
-    const fakePOC = `Based on tags: ${tags.join(', ')}, here is your sample Plan of Correction...\n\n(We will generate this with AI in the next step.)`;
-    setOutput(fakePOC);
+
+    setOutput("🧠 Generating Plan of Correction... please wait...");
+
+    try {
+      const result = await generatePOC(input, tags);
+      setOutput(result);
+    } catch (err) {
+      setOutput("❌ Error generating POC: " + err.message);
+    }
   };
 
   if (!user) {
@@ -54,7 +60,7 @@ function App() {
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
       <h1>Welcome to SNIFFY 🧠</h1>
       <p>You are logged in as <strong>{user.email}</strong></p>
       <button onClick={handleLogout}>Log Out</button>
@@ -70,15 +76,15 @@ function App() {
       ></textarea>
 
       <button style={{ marginTop: '1rem' }} onClick={handleGeneratePOC}>
-        Generate Plan of Correction
+        🧠 Generate Plan of Correction
       </button>
 
       {output && (
-        <div style={{ marginTop: '2rem', background: '#f5f5f5', padding: '1rem' }}>
+        <div style={{ marginTop: '2rem', background: '#f9f9f9', padding: '1rem' }}>
           <h3>Detected F-tags:</h3>
-          <p>{ftags.join(', ')}</p>
+          <p>{ftags.join(', ') || 'None found'}</p>
           <h3>Suggested Plan of Correction:</h3>
-          <pre>{output}</pre>
+          <pre style={{ whiteSpace: 'pre-wrap' }}>{output}</pre>
         </div>
       )}
     </div>
