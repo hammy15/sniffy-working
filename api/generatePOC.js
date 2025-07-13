@@ -5,13 +5,15 @@ export default async function handler(req, res) {
 
   const { inputText, fTags } = req.body;
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: 'Missing OpenAI API key' });
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    return res.status(500).json({ error: 'Missing OpenAI API key in environment variables' });
   }
 
   const prompt = `
-You are a skilled nursing facility compliance consultant.
-Given the following deficiency narrative and F-tags, generate a CMS-compliant Plan of Correction including:
+You are a compliance consultant for skilled nursing facilities.
+Given the following deficiency narrative and F-tags, generate a CMS-compliant Plan of Correction (POC) including:
 - Root cause
 - Corrective actions
 - Monitoring plan
@@ -27,12 +29,12 @@ ${inputText}
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
         model: 'gpt-4',
         messages: [
-          { role: 'system', content: 'You are a compliance expert writing POCs for SNFs.' },
+          { role: 'system', content: 'You are a compliance expert writing Plans of Correction (POCs) for skilled nursing facilities.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.2
