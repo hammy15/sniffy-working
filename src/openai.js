@@ -1,7 +1,7 @@
 export async function generatePOC(inputText, fTags) {
   const prompt = `
-You are a skilled skilled nursing survey consultant.
-Given the following deficiency narrative and F-tags, generate a detailed, CMS-compliant Plan of Correction including:
+You are a skilled nursing facility compliance consultant.
+Given the following deficiency narrative and F-tags, generate a CMS-compliant Plan of Correction including:
 - Root cause
 - Corrective actions
 - Monitoring plan
@@ -29,5 +29,10 @@ ${inputText}
   });
 
   const data = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error.message);
+  }
+
   return data.choices?.[0]?.message?.content || 'No response from OpenAI.';
 }
