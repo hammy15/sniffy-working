@@ -1,11 +1,23 @@
+// Import core
 import React, { useState, useEffect, useRef } from 'react';
-import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, addDoc, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
 import { useDropzone } from 'react-dropzone';
-import * as pdfjsLib from 'pdfjs-dist';
-import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import * as pdfjsLib from 'pdfjs-dist';
+import { auth, db } from './firebase';
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from 'firebase/auth';
+import {
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc
+} from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -16,22 +28,18 @@ function App() {
   const [pass, setPass] = useState('');
   const [inputText, setInputText] = useState('');
   const [fTags, setFTags] = useState('');
-  const [state, setState] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
+  const [selectedState, setSelectedState] = useState('');
   const exportRefs = useRef({});
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      if (u) {
-        setUser(u);
-        fetchPOCs(u.uid);
-      } else {
-        setUser(null);
-      }
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u ?? null);
+      if (u) fetchPOCs(u.uid);
     });
-    return unsubscribe;
+    return unsub;
   }, []);
 
   const fetchPOCs = async (uid) => {
@@ -62,16 +70,15 @@ function App() {
         })
       });
       const data = await res.json();
-
       if (data.result) {
         const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
           inputText,
           fTags,
-          state,
           result: data.result,
+          selectedState,
           timestamp: new Date()
         });
-        setResults([{ id: docRef.id, inputText, fTags, state, result: data.result }, ...results]);
+        setResults([{ id: docRef.id, inputText, fTags, result: data.result, selectedState }, ...results]);
         setInputText('');
         setFTags('');
       } else {
@@ -95,9 +102,7 @@ function App() {
       if (data.carePlan) {
         const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
         await updateDoc(docRef, { carePlan: data.carePlan });
-        setResults(results.map(r =>
-          r.id === pocId ? { ...r, carePlan: data.carePlan } : r
-        ));
+        setResults(results.map(r => r.id === pocId ? { ...r, carePlan: data.carePlan } : r));
       } else {
         alert('No care plan returned.');
       }
@@ -119,18 +124,17 @@ function App() {
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
     const imgProps = pdf.getImageProperties(imgData);
     const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    let heightLeft = imgHeight;
-    let position = 0;
+    let heightLeft = imgHeight, position = 0;
+
     pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-    heightLeft -= pdfHeight;
+    heightLeft -= pdf.internal.pageSize.getHeight();
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdfHeight;
+      heightLeft -= pdf.internal.pageSize.getHeight();
     }
     pdf.save(`POC-${id}.pdf`);
   };
@@ -144,8 +148,7 @@ function App() {
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        fullText += pageText + '\n';
+        fullText += textContent.items.map(item => item.str).join(' ') + '\n';
       }
       const fTagMatches = fullText.match(/F\d{3}/g) || [];
       const fTagList = [...new Set(fTagMatches)].join(', ');
@@ -164,7 +167,6 @@ function App() {
   });
 
   if (user === undefined) return <div style={{ padding: 40 }}>🔄 Loading...</div>;
-
   if (user === null) {
     return (
       <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
@@ -177,73 +179,63 @@ function App() {
   }
 
   return (
-    <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto', fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <h2>SNIFFY 🧠</h2>
         <button onClick={handleLogout}>Logout</button>
       </div>
 
       <h3>📎 Upload CMS-2567 PDF</h3>
-      <div {...getRootProps()} style={{ border: '3px dashed #0077cc', backgroundColor: '#eef7ff', padding: '40px', textAlign: 'center', marginBottom: '30px', cursor: 'pointer', borderRadius: '12px' }}>
+      <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
         <input {...getInputProps()} />
-        {isDragActive ? <p><strong>Drop your CMS-2567 PDF here...</strong></p> : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiencies and F-Tags.</p>}
+        {isDragActive ? <p><strong>Drop PDF here...</strong></p> : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
       </div>
 
-      <select value={state} onChange={e => setState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
-        <option value="">Select State for Additional Regulations</option>
-        {Object.keys(StateRegulations).map((s) => (
-          <option key={s} value={s}>{s}</option>
+      <h3>📍 Select Your State</h3>
+      <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
+        <option value="">-- Select a State (Optional) --</option>
+        {Object.keys(StateRegulations).sort().map(state => (
+          <option key={state} value={state}>{state}</option>
         ))}
       </select>
 
-      <h3>📝 Generate Plan of Correction</h3>
-      <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here or use uploaded PDF" value={inputText} onChange={e => setInputText(e.target.value)} />
-      <input placeholder="F-Tags (e.g. F684, F686)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 8, margin: '10px 0' }} />
-      <button onClick={generatePOC} disabled={loading} style={{ padding: '10px 20px' }}>
-        {loading ? 'Generating...' : '🧠 Generate POC'}
-      </button>
+      <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here..." value={inputText} onChange={e => setInputText(e.target.value)} />
+      <input placeholder="F-Tags (e.g. F684, F689)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 10, margin: '10px 0' }} />
+      <button onClick={generatePOC} disabled={loading} style={{ padding: 10 }}>{loading ? 'Generating...' : '🧠 Generate POC'}</button>
 
       <hr style={{ margin: '40px 0' }} />
       <h3>📂 Saved POCs</h3>
+      {results.map(r => (
+        <div key={r.id} style={{ border: '1px solid #ccc', padding: 20, borderRadius: 8, marginBottom: 20 }}>
+          <div ref={el => exportRefs.current[r.id] = el}>
+            <p><strong>F-Tags:</strong> {r.fTags}</p>
+            <p><strong>Deficiency:</strong></p><pre>{r.inputText}</pre>
+            <p><strong>Plan of Correction:</strong></p><pre>{r.result}</pre>
+            {r.carePlan && (<><p><strong>Care Plan:</strong></p><pre>{r.carePlan}</pre></>)}
 
-      {results.map(r => {
-        const userTags = r.fTags?.split(',').map(f => f.trim());
-        const stateRegs = (StateRegulations[r.state] || []).filter(tag => userTags.includes(tag.fTag));
-
-        return (
-          <div key={r.id} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, marginBottom: 20 }}>
-            <div ref={(el) => exportRefs.current[r.id] = el}>
-              <p><strong>F-Tags:</strong> {r.fTags}</p>
-              <p><strong>Deficiency:</strong></p>
-              <pre>{r.inputText}</pre>
-              <p><strong>Plan of Correction (Federal):</strong></p>
-              <pre>{r.result}</pre>
-              {stateRegs.length > 0 && (
-                <>
-                  <p><strong>{r.state} State-Specific Regulations:</strong></p>
-                  <ul>{stateRegs.map(tag => <li key={tag.fTag}><strong>{tag.fTag}:</strong> {tag.rule}</li>)}</ul>
-                </>
-              )}
-              {r.carePlan && (
-                <>
-                  <p><strong>Care Plan:</strong></p>
-                  <pre>{r.carePlan}</pre>
-                </>
-              )}
-              <small>Generated for: {user.email}</small>
-            </div>
-
-            {!r.carePlan && (
-              <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
-                {carePlanLoading[r.id] ? 'Loading...' : '🧠 Generate Care Plan'}
-              </button>
+            {r.selectedState && (
+              <div>
+                <p><strong>State-Specific Regulations for {r.selectedState}:</strong></p>
+                {r.fTags.split(',').map(tag => {
+                  const cleanTag = tag.trim();
+                  const reg = StateRegulations[r.selectedState]?.[cleanTag];
+                  return reg ? <p key={tag}><strong>{cleanTag}:</strong> {reg}</p> : null;
+                })}
+              </div>
             )}
-            <br /><br />
-            <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>{' '}
-            <button onClick={() => deletePOC(r.id)} style={{ color: 'red', marginLeft: 10 }}>Delete</button>
+
+            <small>Generated for: {user.email}</small>
           </div>
-        );
-      })}
+          {!r.carePlan && (
+            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
+              {carePlanLoading[r.id] ? 'Generating...' : '🧠 Generate Care Plan'}
+            </button>
+          )}
+          <br /><br />
+          <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>
+          <button onClick={() => deletePOC(r.id)} style={{ marginLeft: 10, color: 'red' }}>Delete</button>
+        </div>
+      ))}
     </div>
   );
 }
