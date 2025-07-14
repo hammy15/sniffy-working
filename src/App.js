@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useDropzone } from 'react-dropzone';
+import * as pdfjsLib from 'pdfjs-dist';
 import { auth, db } from './firebase';
 import {
   signInWithEmailAndPassword,
@@ -15,6 +17,8 @@ import {
 } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 function App() {
   const [user, setUser] = useState(null);
@@ -145,6 +149,41 @@ function App() {
     pdf.save(`POC-${id}.pdf`);
   };
 
+  const extractTextFromPDF = async (file) => {
+    const reader = new FileReader();
+    reader.onload = async function () {
+      const typedArray = new Uint8Array(reader.result);
+      const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+      let fullText = '';
+
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+
+      // Very basic F-Tag extract
+      const fTagMatches = fullText.match(/F\d{3}/g) || [];
+      const fTagList = [...new Set(fTagMatches)].join(', ');
+
+      setInputText(fullText.trim().slice(0, 3000)); // Limit to 3k chars
+      setFTags(fTagList);
+    };
+
+    reader.readAsArrayBuffer(file);
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: { 'application/pdf': [] },
+    multiple: false,
+    onDrop: (acceptedFiles) => {
+      if (acceptedFiles.length > 0) {
+        extractTextFromPDF(acceptedFiles[0]);
+      }
+    }
+  });
+
   if (!user) {
     return (
       <div style={{ padding: 40 }}>
@@ -169,6 +208,19 @@ function App() {
     <div style={{ padding: 40 }}>
       <h2>Welcome to SNIFFY 🧠</h2>
       <button onClick={handleLogout}>Logout</button>
+
+      <h4>Upload 2567 PDF</h4>
+      <div {...getRootProps()} style={{
+        border: '2px dashed #aaa', padding: 20,
+        marginBottom: 20, cursor: 'pointer'
+      }}>
+        <input {...getInputProps()} />
+        {isDragActive ? (
+          <p>Drop the PDF here...</p>
+        ) : (
+          <p>Click or drag your 2567 PDF file here</p>
+        )}
+      </div>
 
       <h4>New Deficiency</h4>
       <textarea
