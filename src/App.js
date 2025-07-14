@@ -1,4 +1,5 @@
-// Import core
+// App.js
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import html2canvas from 'html2canvas';
@@ -16,7 +17,8 @@ import {
   getDocs,
   updateDoc,
   deleteDoc,
-  doc
+  doc,
+  getDoc
 } from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
 
@@ -32,12 +34,16 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const [selectedState, setSelectedState] = useState('');
+  const [hasPaid, setHasPaid] = useState(false);
   const exportRefs = useRef({});
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u ?? null);
-      if (u) fetchPOCs(u.uid);
+      if (u) {
+        fetchPOCs(u.uid);
+        checkPayment(u.uid);
+      }
     });
     return unsub;
   }, []);
@@ -48,6 +54,26 @@ function App() {
     setResults(data);
   };
 
+  const checkPayment = async (uid) => {
+    const docRef = doc(db, 'users', uid);
+    const userSnap = await getDoc(docRef);
+    setHasPaid(userSnap.exists() && userSnap.data().hasPaid === true);
+  };
+
+  const handleStripeCheckout = async () => {
+    const res = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uid: user.uid })
+    });
+    const data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      alert('Unable to initiate checkout');
+    }
+  };
+
   const handleLogin = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, pass);
@@ -55,13 +81,6 @@ function App() {
       alert('Login failed: ' + err.message);
     }
   };
-<div style={{ marginTop: 20 }}>
-  <h3>💳 Unlock POC Generator</h3>
-  <p>To generate a Plan of Correction, please complete a one-time payment.</p>
-  <button onClick={handleStripeCheckout} style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff' }}>
-    Pay $5 to Unlock
-  </button>
-</div>
 
   const handleLogout = () => signOut(auth);
 
@@ -192,23 +211,37 @@ function App() {
         <button onClick={handleLogout}>Logout</button>
       </div>
 
-      <h3>📎 Upload CMS-2567 PDF</h3>
-      <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
-        <input {...getInputProps()} />
-        {isDragActive ? <p><strong>Drop PDF here...</strong></p> : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
-      </div>
+      {!hasPaid && (
+        <div style={{ background: '#fff3cd', padding: 20, borderRadius: 8, marginTop: 20 }}>
+          <h3>💳 Unlock POC Generator</h3>
+          <p>To generate a Plan of Correction, please complete a one-time $5 payment.</p>
+          <button onClick={handleStripeCheckout} style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff' }}>
+            Pay $5 to Unlock
+          </button>
+        </div>
+      )}
 
-      <h3>📍 Select Your State</h3>
-      <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
-        <option value="">-- Select a State (Optional) --</option>
-        {Object.keys(StateRegulations).sort().map(state => (
-          <option key={state} value={state}>{state}</option>
-        ))}
-      </select>
+      {hasPaid && (
+        <>
+          <h3>📎 Upload CMS-2567 PDF</h3>
+          <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
+            <input {...getInputProps()} />
+            {isDragActive ? <p><strong>Drop PDF here...</strong></p> : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
+          </div>
 
-      <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here..." value={inputText} onChange={e => setInputText(e.target.value)} />
-      <input placeholder="F-Tags (e.g. F684, F689)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 10, margin: '10px 0' }} />
-      <button onClick={generatePOC} disabled={loading} style={{ padding: 10 }}>{loading ? 'Generating...' : '🧠 Generate POC'}</button>
+          <h3>📍 Select Your State</h3>
+          <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
+            <option value="">-- Select a State (Optional) --</option>
+            {Object.keys(StateRegulations).sort().map(state => (
+              <option key={state} value={state}>{state}</option>
+            ))}
+          </select>
+
+          <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here..." value={inputText} onChange={e => setInputText(e.target.value)} />
+          <input placeholder="F-Tags (e.g. F684, F689)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 10, margin: '10px 0' }} />
+          <button onClick={generatePOC} disabled={loading} style={{ padding: 10 }}>{loading ? 'Generating...' : '🧠 Generate POC'}</button>
+        </>
+      )}
 
       <hr style={{ margin: '40px 0' }} />
       <h3>📂 Saved POCs</h3>
@@ -223,11 +256,9 @@ function App() {
             {r.selectedState && (
               <div>
                 <p><strong>State-Specific Regulations for {r.selectedState}:</strong></p>
-                {r.fTags.split(',').map(tag => {
-                  const cleanTag = tag.trim();
-                  const reg = StateRegulations[r.selectedState]?.[cleanTag];
-                  return reg ? <p key={tag}><strong>{cleanTag}:</strong> {reg}</p> : null;
-                })}
+                {StateRegulations[r.selectedState]?.map((reg, index) => (
+                  <p key={index}><strong>{reg.tag}:</strong> {reg.regulation}</p>
+                ))}
               </div>
             )}
 
