@@ -31,12 +31,12 @@ function App() {
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
 
-  useEffect(() => {
-    onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (u) fetchPOCs(u.uid);
-    });
-  }, []);
+ useEffect(() => {
+  const unsub = onAuthStateChanged(auth, (u) => {
+    setUser(u ?? null);
+  });
+  return unsub;
+}, []);
 
   const fetchPOCs = async (uid) => {
     const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
@@ -55,6 +55,8 @@ function App() {
   const handleLogout = () => signOut(auth);
 
   if (!user) {
+if (user === undefined) return <p>Checking login...</p>;
+
     return (
       <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
         <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
