@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 {
   uid: "user_id",
-  email: "email@example.com",;
+  email: "email@example.com";
   pro: true, // controlled by webhook
 }
 
