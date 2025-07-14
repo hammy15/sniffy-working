@@ -1,178 +1,188 @@
 import React, { useState, useEffect } from 'react';
-import Login from './Login';
-import Register from './Register';
 import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { generatePOC } from './openai';
+import {
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
 import {
   collection,
   addDoc,
   getDocs,
-  query,
-  where,
+  updateDoc,
   deleteDoc,
-  doc,
-  updateDoc
+  doc
 } from 'firebase/firestore';
 
 function App() {
   const [user, setUser] = useState(null);
-  const [view, setView] = useState('login');
-  const [input, setInput] = useState('');
-  const [output, setOutput] = useState('');
-  const [ftags, setFtags] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [editId, setEditId] = useState(null);
-  const [editedText, setEditedText] = useState('');
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [inputText, setInputText] = useState('');
+  const [fTags, setFTags] = useState('');
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [carePlanLoading, setCarePlanLoading] = useState({});
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
+    onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (u) fetchPOCs(u.uid);
     });
-    return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    const fetchHistory = async () => {
-      if (user) {
-        const q = query(collection(db, 'pocs'), where('uid', '==', user.uid));
-        const snapshot = await getDocs(q);
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setHistory(docs);
-      }
-    };
-    fetchHistory();
-  }, [user]);
+  const fetchPOCs = async (uid) => {
+    const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
+    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setResults(data);
+  };
+
+  const handleLogin = async () => {
+    try {
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (err) {
+      alert('Login failed: ' + err.message);
+    }
+  };
 
   const handleLogout = () => {
     signOut(auth);
   };
 
-  const handleSuccess = () => {
-    setUser(auth.currentUser);
-  };
-
-  const handleGeneratePOC = async () => {
-    const tags = input.match(/F\d{3,4}/g) || [];
-    setFtags(tags);
-    setOutput("🧠 Generating Plan of Correction... please wait...");
-
+  const generatePOC = async () => {
+    setLoading(true);
     try {
-      const result = await generatePOC(input, tags);
-      setOutput(result);
-
-      await addDoc(collection(db, 'pocs'), {
-        uid: user.uid,
-        email: user.email,
-        timestamp: new Date(),
-        input,
-        fTags: tags,
-        poc: result
+      const res = await fetch('/api/generatePOC', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText,
+          fTags: fTags.split(',').map(f => f.trim())
+        })
       });
-
-      const q = query(collection(db, 'pocs'), where('uid', '==', user.uid));
-      const snapshot = await getDocs(q);
-      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setHistory(docs);
+      const data = await res.json();
+      if (data.result) {
+        const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
+          inputText,
+          fTags,
+          result: data.result,
+          timestamp: new Date()
+        });
+        setResults([{ id: docRef.id, inputText, fTags, result: data.result }, ...results]);
+        setInputText('');
+        setFTags('');
+      } else {
+        alert('No result from GPT');
+      }
     } catch (err) {
-      setOutput("❌ Error generating POC: " + err.message);
+      alert('Error generating POC: ' + err.message);
     }
+    setLoading(false);
   };
 
-  const handleDelete = async (docId) => {
-    await deleteDoc(doc(db, 'pocs', docId));
-    setHistory(history.filter((item) => item.id !== docId));
+  const generateCarePlan = async (pocId, pocText) => {
+    setCarePlanLoading(prev => ({ ...prev, [pocId]: true }));
+    try {
+      const res = await fetch('/api/generateCarePlan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pocText })
+      });
+      const data = await res.json();
+      if (data.carePlan) {
+        const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
+        await updateDoc(docRef, { carePlan: data.carePlan });
+
+        setResults(results.map(r =>
+          r.id === pocId ? { ...r, carePlan: data.carePlan } : r
+        ));
+      } else {
+        alert('No care plan returned.');
+      }
+    } catch (err) {
+      alert('Error generating care plan: ' + err.message);
+    }
+    setCarePlanLoading(prev => ({ ...prev, [pocId]: false }));
   };
 
-  const handleSaveEdit = async (docId) => {
-    await updateDoc(doc(db, 'pocs', docId), { poc: editedText });
-    setHistory(history.map(item =>
-      item.id === docId ? { ...item, poc: editedText } : item
-    ));
-    setEditId(null);
+  const deletePOC = async (id) => {
+    await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
+    setResults(results.filter(r => r.id !== id));
   };
 
   if (!user) {
     return (
-      <div style={{ padding: '2rem' }}>
-        {view === 'login' ? (
-          <>
-            <Login onLogin={handleSuccess} />
-            <p>Need an account? <button onClick={() => setView('register')}>Register</button></p>
-          </>
-        ) : (
-          <>
-            <Register onRegister={handleSuccess} />
-            <p>Already have an account? <button onClick={() => setView('login')}>Login</button></p>
-          </>
-        )}
+      <div style={{ padding: 40 }}>
+        <h2>Login to SNIFFY 🧠</h2>
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+        /><br />
+        <input
+          type="password"
+          placeholder="Password"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+        /><br />
+        <button onClick={handleLogin}>Login</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
-      <h1>Welcome to SNIFFY 🧠</h1>
-      <p>You are logged in as <strong>{user.email}</strong></p>
-      <button onClick={handleLogout}>Log Out</button>
+    <div style={{ padding: 40 }}>
+      <h2>Welcome to SNIFFY 🧠</h2>
+      <button onClick={handleLogout}>Logout</button>
 
-      <hr style={{ margin: '2rem 0' }} />
-      <h2>Paste Your 2567 Text</h2>
+      <h4>New Deficiency</h4>
       <textarea
-        rows={10}
-        style={{ width: '100%', padding: '1rem', fontFamily: 'monospace' }}
-        placeholder="Paste full 2567 deficiency narrative here..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-      ></textarea>
-
-      <button style={{ marginTop: '1rem' }} onClick={handleGeneratePOC}>
-        🧠 Generate Plan of Correction
+        rows="5"
+        style={{ width: '100%' }}
+        placeholder="Paste 2567 deficiency text"
+        value={inputText}
+        onChange={e => setInputText(e.target.value)}
+      /><br />
+      <input
+        placeholder="F-Tags (e.g. F684, F686)"
+        value={fTags}
+        onChange={e => setFTags(e.target.value)}
+      /><br />
+      <button onClick={generatePOC} disabled={loading}>
+        {loading ? 'Generating POC...' : '🧠 Generate Plan of Correction'}
       </button>
 
-      {output && (
-        <div style={{ marginTop: '2rem', background: '#f9f9f9', padding: '1rem' }}>
-          <h3>Detected F-tags:</h3>
-          <p>{ftags.join(', ') || 'None found'}</p>
-          <h3>Suggested Plan of Correction:</h3>
-          <pre style={{ whiteSpace: 'pre-wrap' }}>{output}</pre>
-        </div>
-      )}
+      <hr />
 
-      {history.length > 0 && (
-        <div style={{ marginTop: '3rem' }}>
-          <h3>Your Previous Plans of Correction</h3>
-          <ul>
-            {history.map((item, i) => (
-              <li key={i} style={{ marginBottom: '1.5rem' }}>
-                <strong>{new Date(item.timestamp.seconds * 1000).toLocaleString()}</strong><br />
-                <em>F-tags: {item.fTags?.join(', ')}</em><br />
-                {editId === item.id ? (
-                  <>
-                    <textarea
-                      rows={6}
-                      style={{ width: '100%', marginTop: '0.5rem' }}
-                      value={editedText}
-                      onChange={(e) => setEditedText(e.target.value)}
-                    />
-                    <button onClick={() => handleSaveEdit(item.id)}>💾 Save</button>
-                    <button onClick={() => setEditId(null)}>Cancel</button>
-                  </>
-                ) : (
-                  <>
-                    <pre style={{ background: '#eee', padding: '1rem' }}>{item.poc}</pre>
-                    <button onClick={() => {
-                      setEditId(item.id);
-                      setEditedText(item.poc);
-                    }}>✏️ Edit</button>
-                    <button onClick={() => handleDelete(item.id)} style={{ marginLeft: '0.5rem' }}>🗑 Delete</button>
-                  </>
-                )}
-              </li>
-            ))}
-          </ul>
+      <h3>Saved POCs</h3>
+      {results.map((r) => (
+        <div key={r.id} style={{ border: '1px solid #ccc', padding: 15, marginBottom: 20 }}>
+          <b>F-Tags:</b> {r.fTags}<br /><br />
+          <b>Deficiency:</b><br />
+          <pre>{r.inputText}</pre>
+          <b>Plan of Correction:</b><br />
+          <pre>{r.result}</pre>
+
+          {r.carePlan ? (
+            <>
+              <b>Care Plan:</b>
+              <pre>{r.carePlan}</pre>
+            </>
+          ) : (
+            <button
+              onClick={() => generateCarePlan(r.id, r.result)}
+              disabled={carePlanLoading[r.id]}
+            >
+              {carePlanLoading[r.id] ? 'Generating Care Plan...' : '🧠 Generate Care Plan'}
+            </button>
+          )}
+
+          <br /><br />
+          <button onClick={() => deletePOC(r.id)} style={{ color: 'red' }}>
+            Delete
+          </button>
         </div>
-      )}
+      ))}
     </div>
   );
 }
