@@ -33,7 +33,9 @@ function App() {
   const exportRefs = useRef({});
 
  useEffect(() => {
+  console.log("Checking auth...");
   const unsub = onAuthStateChanged(auth, (u) => {
+    console.log("Auth state changed:", u);
     setUser(u ?? null);
     if (u) fetchPOCs(u.uid);
   });
