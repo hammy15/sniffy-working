@@ -11,6 +11,11 @@ const firebaseConfig = {
   messagingSenderId: "219824031376",
   appId: "1:219824031376:web:428056bea4fdf638117a15"
 };
+{
+  uid: "user_id",
+  email: "email@example.com",
+  pro: true, // controlled by webhook
+}
 
 const app = initializeApp(firebaseConfig);
 
