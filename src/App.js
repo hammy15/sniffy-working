@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { auth, db } from './firebase';
 import {
   signInWithEmailAndPassword,
@@ -13,6 +13,8 @@ import {
   deleteDoc,
   doc
 } from 'firebase/firestore';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -23,6 +25,7 @@ function App() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
+  const exportRefs = useRef({});
 
   useEffect(() => {
     onAuthStateChanged(auth, (u) => {
@@ -92,7 +95,6 @@ function App() {
       if (data.carePlan) {
         const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
         await updateDoc(docRef, { carePlan: data.carePlan });
-
         setResults(results.map(r =>
           r.id === pocId ? { ...r, carePlan: data.carePlan } : r
         ));
@@ -108,6 +110,19 @@ function App() {
   const deletePOC = async (id) => {
     await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
     setResults(results.filter(r => r.id !== id));
+  };
+
+  const exportAsPDF = async (id) => {
+    const element = exportRefs.current[id];
+    if (!element) return;
+    const canvas = await html2canvas(element);
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF();
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    pdf.save(`POC-${id}.pdf`);
   };
 
   if (!user) {
@@ -156,19 +171,26 @@ function App() {
 
       <h3>Saved POCs</h3>
       {results.map((r) => (
-        <div key={r.id} style={{ border: '1px solid #ccc', padding: 15, marginBottom: 20 }}>
-          <b>F-Tags:</b> {r.fTags}<br /><br />
-          <b>Deficiency:</b><br />
-          <pre>{r.inputText}</pre>
-          <b>Plan of Correction:</b><br />
-          <pre>{r.result}</pre>
+        <div
+          key={r.id}
+          style={{ border: '1px solid #ccc', padding: 15, marginBottom: 20 }}
+        >
+          <div ref={(el) => (exportRefs.current[r.id] = el)}>
+            <b>F-Tags:</b> {r.fTags}<br /><br />
+            <b>Deficiency:</b><br />
+            <pre>{r.inputText}</pre>
+            <b>Plan of Correction:</b><br />
+            <pre>{r.result}</pre>
+            {r.carePlan && (
+              <>
+                <b>Care Plan:</b><br />
+                <pre>{r.carePlan}</pre>
+              </>
+            )}
+            <small>Generated for: {user.email}</small><br />
+          </div>
 
-          {r.carePlan ? (
-            <>
-              <b>Care Plan:</b>
-              <pre>{r.carePlan}</pre>
-            </>
-          ) : (
+          {!r.carePlan && (
             <button
               onClick={() => generateCarePlan(r.id, r.result)}
               disabled={carePlanLoading[r.id]}
@@ -176,8 +198,8 @@ function App() {
               {carePlanLoading[r.id] ? 'Generating Care Plan...' : '🧠 Generate Care Plan'}
             </button>
           )}
-
           <br /><br />
+          <button onClick={() => exportAsPDF(r.id)}>📄 Export as PDF</button>{' '}
           <button onClick={() => deletePOC(r.id)} style={{ color: 'red' }}>
             Delete
           </button>
