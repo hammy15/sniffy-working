@@ -273,34 +273,50 @@ useEffect(() => {
 -   disabled={loading || !user.pro}
 -   style={{ padding: 10 }}
 - >
-+ <button
-+   onClick={generatePOC}
-+   disabled={loading}
-+   style={{ padding: 10 }}
-+ >
-
++       {/* Generate POC button */}
+      <button
+        onClick={generatePOC}
+        disabled={loading}
+        style={{ padding: 10 }}
+      >
+        {loading ? 'Generating...' : '🧠 Generate POC'}
+      </button>
 
       <hr style={{ margin: '40px 0' }} />
       <h3>📂 Saved POCs</h3>
       {results.map(r => (
-        <div key={r.id} style={{ border: '1px solid #ccc', padding: 20, borderRadius: 8, marginBottom: 20 }}>
-          <div ref={el => exportRefs.current[r.id] = el}>
-            <p><strong>F-Tags:</strong> {r.fTags}</p>
-            <p><strong>Deficiency:</strong></p><pre>{r.inputText}</pre>
-            <p><strong>Plan of Correction:</strong></p><pre>{r.result}</pre>
+        <div
+          key={r.id}
+          style={{
+            border: '1px solid #ccc',
+            padding: 20,
+            borderRadius: 8,
+            marginBottom: 20
+          }}
+        >
+          <div ref={el => (exportRefs.current[r.id] = el)}>
+            <p><strong>F‑Tags:</strong> {r.fTags}</p>
+            <p><strong>Deficiency:</strong></p>
+            <pre>{r.inputText}</pre>
+            <p><strong>Plan of Correction:</strong></p>
+            <pre>{r.result}</pre>
             {r.carePlan && (
               <>
-                <p><strong>Care Plan:</strong></p><pre>{r.carePlan}</pre>
+                <p><strong>Care Plan:</strong></p>
+                <pre>{r.carePlan}</pre>
               </>
             )}
-
             {r.selectedState && (
               <div>
                 <p><strong>State-Specific Regulations for {r.selectedState}:</strong></p>
                 {r.fTags.split(',').map(tag => {
                   const cleanTag = tag.trim();
                   const reg = StateRegulations[r.selectedState]?.[cleanTag];
-                  return reg ? <p key={tag}><strong>{cleanTag}:</strong> {reg}</p> : null;
+                  return reg ? (
+                    <p key={cleanTag}>
+                      <strong>{cleanTag}:</strong> {reg}
+                    </p>
+                  ) : null;
                 })}
               </div>
             )}
@@ -308,18 +324,23 @@ useEffect(() => {
           </div>
 
           {!r.carePlan && (
-            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
+            <button
+              onClick={() => generateCarePlan(r.id, r.result)}
+              disabled={carePlanLoading[r.id]}
+              style={{ marginTop: 10 }}
+            >
               {carePlanLoading[r.id] ? 'Generating...' : '🧠 Generate Care Plan'}
             </button>
           )}
           <br /><br />
           <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>
-          <button onClick={() => deletePOC(r.id)} style={{ marginLeft: 10, color: 'red' }}>Delete</button>
+          <button onClick={() => deletePOC(r.id)} style={{ marginLeft: 10, color: 'red' }}>
+            Delete
+          </button>
         </div>
-      {/* your saved POCs mapping */}
-  ))}
-</div>
-);
+      ))} {/* <-- Close results.map */}
+    </div> {/* <-- Close main div */}
+  );
 }
 
 export default App;
