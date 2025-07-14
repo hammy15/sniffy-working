@@ -101,9 +101,10 @@ function App() {
       if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
-  ifif (user === undefined); {
+  if (user === undefined) {
   return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
 }
+
 
 if (user === null) {
   return (
