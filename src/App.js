@@ -268,7 +268,7 @@ useEffect(() => {
         onChange={e => setFTags(e.target.value)}
         style={{ width: '100%', padding: 10, margin: '10px 0' }}
       />
-      <button onClick={generatePOC} disabled={loading || !userData?.pro} style={{ padding: 10 }}>
+      <button onClick={generatePOC}  !userData?.pro} style={{ padding: 10 }}>
         {loading ? 'Generating...' : '🧠 Generate POC'}
       </button>
 
