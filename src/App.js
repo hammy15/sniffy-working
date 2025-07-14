@@ -20,7 +20,7 @@ import {
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useEffect, useState, useRef } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+
 import { auth } from './firebase'; // make sure this matches your file path
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
