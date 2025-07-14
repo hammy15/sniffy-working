@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+// Your Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDl6Hitkmws_aPWBX4yF_uYrnN8CpHgS2k",
   authDomain: "sniffy-app-be555.firebaseapp.com",
@@ -11,13 +12,10 @@ const firebaseConfig = {
   messagingSenderId: "219824031376",
   appId: "1:219824031376:web:428056bea4fdf638117a15"
 };
-{
-  uid: "user_id",
-  email: "email@example.com";
-  pro: true, // controlled by webhook
-}
 
+// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
+// Export Firebase auth and Firestore instances
 export const auth = getAuth(app);
 export const db = getFirestore(app);
