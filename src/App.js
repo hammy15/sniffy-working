@@ -1,6 +1,9 @@
-// App.js
 import React, { useState, useEffect, useRef } from 'react';
-import { auth, db } from './firebase';
+import {
+  signInWithEmailAndPassword,
+  onAuthStateChanged,
+  signOut
+} from 'firebase/auth';
 import {
   collection,
   addDoc,
@@ -9,23 +12,15 @@ import {
   doc,
   updateDoc
 } from 'firebase/firestore';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { useDropzone } from 'react-dropzone';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+import { auth, db } from './firebase';
+import StateRegulations from './StateRegulations';
 
-const US_STATES = [
-  "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut",
-  "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
-  "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan",
-  "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire",
-  "New Jersey", "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma",
-  "Oregon", "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee",
-  "Texas", "Utah", "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
-];
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 function App() {
   const [user, setUser] = useState(undefined);
@@ -33,14 +28,13 @@ function App() {
   const [pass, setPass] = useState('');
   const [inputText, setInputText] = useState('');
   const [fTags, setFTags] = useState('');
-  const [state, setState] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (u) {
         setUser(u);
         fetchPOCs(u.uid);
@@ -48,7 +42,7 @@ function App() {
         setUser(null);
       }
     });
-    return unsub;
+    return unsubscribe;
   }, []);
 
   const fetchPOCs = async (uid) => {
@@ -75,8 +69,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inputText,
-          fTags: fTags.split(',').map(f => f.trim()),
-          state
+          fTags: fTags.split(',').map(f => f.trim())
         })
       });
       const data = await res.json();
@@ -85,13 +78,11 @@ function App() {
           inputText,
           fTags,
           result: data.result,
-          state,
           timestamp: new Date()
         });
-        setResults([{ id: docRef.id, inputText, fTags, result: data.result, state }, ...results]);
+        setResults([{ id: docRef.id, inputText, fTags, result: data.result }, ...results]);
         setInputText('');
         setFTags('');
-        setState('');
       } else {
         alert('No result from GPT');
       }
@@ -137,18 +128,17 @@ function App() {
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
     const imgProps = pdf.getImageProperties(imgData);
     const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
     let heightLeft = imgHeight;
     let position = 0;
     pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-    heightLeft -= pdfHeight;
+    heightLeft -= pdf.internal.pageSize.getHeight();
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdfHeight;
+      heightLeft -= pdf.internal.pageSize.getHeight();
     }
     pdf.save(`POC-${id}.pdf`);
   };
@@ -189,8 +179,19 @@ function App() {
     return (
       <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
         <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
-        <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
         <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
       </div>
     );
@@ -222,14 +223,19 @@ function App() {
       </div>
 
       <h3>📝 Generate Plan of Correction</h3>
-      <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here or use uploaded PDF" value={inputText} onChange={e => setInputText(e.target.value)} />
-      <input placeholder="F-Tags (e.g. F684, F686)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 8, margin: '10px 0' }} />
-
-      <select value={state} onChange={(e) => setState(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }}>
-        <option value="">Select your state</option>
-        {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-      </select>
-
+      <textarea
+        rows="5"
+        style={{ width: '100%', padding: 10 }}
+        placeholder="Paste deficiency text here or use uploaded PDF"
+        value={inputText}
+        onChange={e => setInputText(e.target.value)}
+      />
+      <input
+        placeholder="F-Tags (e.g. F684, F686)"
+        value={fTags}
+        onChange={e => setFTags(e.target.value)}
+        style={{ width: '100%', padding: 8, margin: '10px 0' }}
+      />
       <button onClick={generatePOC} disabled={loading} style={{ padding: '10px 20px' }}>
         {loading ? 'Generating...' : '🧠 Generate POC'}
       </button>
@@ -238,9 +244,11 @@ function App() {
 
       <h3>📂 Saved POCs</h3>
       {results.map(r => (
-        <div key={r.id} style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, marginBottom: 20 }}>
+        <div
+          key={r.id}
+          style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, marginBottom: 20 }}
+        >
           <div ref={(el) => exportRefs.current[r.id] = el}>
-            <p><strong>State:</strong> {r.state}</p>
             <p><strong>F-Tags:</strong> {r.fTags}</p>
             <p><strong>Deficiency:</strong></p>
             <pre>{r.inputText}</pre>
@@ -255,7 +263,11 @@ function App() {
             <small>Generated for: {user.email}</small>
           </div>
           {!r.carePlan && (
-            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
+            <button
+              onClick={() => generateCarePlan(r.id, r.result)}
+              disabled={carePlanLoading[r.id]}
+              style={{ marginTop: 10 }}
+            >
               {carePlanLoading[r.id] ? 'Loading...' : '🧠 Generate Care Plan'}
             </button>
           )}
@@ -266,6 +278,8 @@ function App() {
           </button>
         </div>
       ))}
+
+      <StateRegulations />
     </div>
   );
 }
