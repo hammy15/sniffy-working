@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { useDropzone } from 'react-dropzone';
+import * as pdfjsLib from 'pdfjs-dist';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+
 import { auth, db } from './firebase';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
 import {
   collection,
   addDoc,
@@ -10,33 +19,10 @@ import {
   updateDoc
 } from 'firebase/firestore';
 
-import { useDropzone } from 'react-dropzone';
-import * as pdfjsLib from 'pdfjs-dist';
-import { auth } from './firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-
-import {
-  signInWithEmailAndPassword,
-  onAuthStateChanged,
-  signOut
-} from 'firebase/auth';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  updateDoc,
-  deleteDoc,
-  doc
-} from 'firebase/firestore';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import { useEffect, useState, useRef } from 'react';
-
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 function App() {
-  const [user, setUser] = useState(undefined); // undefined = loading
-
+  const [user, setUser] = useState(undefined);
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [inputText, setInputText] = useState('');
@@ -46,23 +32,17 @@ function App() {
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
 
-useEffect(() => {
-  console.log("👀 Checking auth...");
-
-  const unsubscribe = onAuthStateChanged(auth, (u) => {
-    console.log("✅ Auth result:", u);
-
-    if (u) {
-      setUser(u);         // user is logged in
-      fetchPOCs(u.uid);   // load their saved data
-    } else {
-      setUser(null);      // not logged in
-    }
-  });
-
-  return unsubscribe;
-}, []);
-
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (u) {
+        setUser(u);
+        fetchPOCs(u.uid);
+      } else {
+        setUser(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   const fetchPOCs = async (uid) => {
     const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
@@ -79,34 +59,7 @@ useEffect(() => {
   };
 
   const handleLogout = () => signOut(auth);
-if (user === undefined) {
-  return <div style={{ padding: 40 }}>🔄 Loading...</div>;
-}
-  if (user === undefined) {
-  return <div style={{ padding: 40 }}>🔄 Loading...</div>;
-}
 
-if (user === null) {
-  return (
-    <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-      <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-      <input
-        placeholder="Email"
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 10 }}
-      />
-      <input
-        type="password"
-        placeholder="Password"
-        value={pass}
-        onChange={e => setPass(e.target.value)}
-        style={{ width: '100%', padding: 8, marginBottom: 10 }}
-      />
-      <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
-    </div>
-  );
-}
   const generatePOC = async () => {
     setLoading(true);
     try {
@@ -217,6 +170,33 @@ if (user === null) {
       if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
+
+  if (user === undefined) {
+    return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+  }
+
+  if (user === null) {
+    return (
+      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto', fontFamily: 'sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
