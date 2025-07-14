@@ -52,9 +52,7 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
-    signOut(auth);
-  };
+  const handleLogout = () => signOut(auth);
 
   const generatePOC = async () => {
     setLoading(true);
@@ -119,33 +117,23 @@ function App() {
   const exportAsPDF = async (id) => {
     const element = exportRefs.current[id];
     if (!element) return;
-
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true
-    });
-
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-
     const imgProps = pdf.getImageProperties(imgData);
     const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
     let heightLeft = imgHeight;
     let position = 0;
-
     pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
     heightLeft -= pdfHeight;
-
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
       heightLeft -= pdfHeight;
     }
-
     pdf.save(`POC-${id}.pdf`);
   };
 
@@ -155,21 +143,17 @@ function App() {
       const typedArray = new Uint8Array(reader.result);
       const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
       let fullText = '';
-
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         const pageText = textContent.items.map(item => item.str).join(' ');
         fullText += pageText + '\n';
       }
-
       const fTagMatches = fullText.match(/F\d{3}/g) || [];
       const fTagList = [...new Set(fTagMatches)].join(', ');
-
       setInputText(fullText.trim().slice(0, 3000));
       setFTags(fTagList);
     };
-
     reader.readAsArrayBuffer(file);
   };
 
@@ -177,41 +161,43 @@ function App() {
     accept: { 'application/pdf': [] },
     multiple: false,
     onDrop: (acceptedFiles) => {
-      if (acceptedFiles.length > 0) {
-        extractTextFromPDF(acceptedFiles[0]);
-      }
+      if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
 
   if (!user) {
     return (
-      <div style={{ padding: 40 }}>
-        <h2>Login to SNIFFY 🧠</h2>
+      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
         <input
           placeholder="Email"
           value={email}
           onChange={e => setEmail(e.target.value)}
-        /><br />
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
         <input
           type="password"
           placeholder="Password"
           value={pass}
           onChange={e => setPass(e.target.value)}
-        /><br />
-        <button onClick={handleLogin}>Login</button>
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 40 }}>
-      <h2>Welcome to SNIFFY 🧠</h2>
-      <button onClick={handleLogout}>Logout</button>
+    <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto', fontFamily: 'sans-serif' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>SNIFFY 🧠</h2>
+        <button onClick={handleLogout}>Logout</button>
+      </div>
 
       <h3>📎 Upload CMS-2567 PDF</h3>
       <div {...getRootProps()} style={{
         border: '3px dashed #0077cc',
-        backgroundColor: '#f0f8ff',
+        backgroundColor: '#eef7ff',
         padding: '40px',
         textAlign: 'center',
         marginBottom: '30px',
@@ -222,61 +208,62 @@ function App() {
         {isDragActive ? (
           <p><strong>Drop your CMS-2567 PDF here...</strong></p>
         ) : (
-          <p>Click or drag your <strong>2567 PDF</strong> into this box to extract deficiencies and F-Tags</p>
+          <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiencies and F-Tags.</p>
         )}
       </div>
 
-      <h4>New Deficiency</h4>
+      <h3>📝 Generate Plan of Correction</h3>
       <textarea
         rows="5"
-        style={{ width: '100%' }}
-        placeholder="Paste 2567 deficiency text"
+        style={{ width: '100%', padding: 10 }}
+        placeholder="Paste deficiency text here or use uploaded PDF"
         value={inputText}
         onChange={e => setInputText(e.target.value)}
-      /><br />
+      />
       <input
         placeholder="F-Tags (e.g. F684, F686)"
         value={fTags}
         onChange={e => setFTags(e.target.value)}
-      /><br />
-      <button onClick={generatePOC} disabled={loading}>
-        {loading ? 'Generating POC...' : '🧠 Generate Plan of Correction'}
+        style={{ width: '100%', padding: 8, margin: '10px 0' }}
+      />
+      <button onClick={generatePOC} disabled={loading} style={{ padding: '10px 20px' }}>
+        {loading ? 'Generating...' : '🧠 Generate POC'}
       </button>
 
-      <hr />
+      <hr style={{ margin: '40px 0' }} />
 
-      <h3>Saved POCs</h3>
-      {results.map((r) => (
+      <h3>📂 Saved POCs</h3>
+      {results.map(r => (
         <div
           key={r.id}
-          style={{ border: '1px solid #ccc', padding: 15, marginBottom: 20 }}
+          style={{ border: '1px solid #ddd', borderRadius: 8, padding: 20, marginBottom: 20 }}
         >
-          <div ref={(el) => (exportRefs.current[r.id] = el)}>
-            <b>F-Tags:</b> {r.fTags}<br /><br />
-            <b>Deficiency:</b><br />
+          <div ref={(el) => exportRefs.current[r.id] = el}>
+            <p><strong>F-Tags:</strong> {r.fTags}</p>
+            <p><strong>Deficiency:</strong></p>
             <pre>{r.inputText}</pre>
-            <b>Plan of Correction:</b><br />
+            <p><strong>Plan of Correction:</strong></p>
             <pre>{r.result}</pre>
             {r.carePlan && (
               <>
-                <b>Care Plan:</b><br />
+                <p><strong>Care Plan:</strong></p>
                 <pre>{r.carePlan}</pre>
               </>
             )}
-            <small>Generated for: {user.email}</small><br />
+            <small>Generated for: {user.email}</small>
           </div>
-
           {!r.carePlan && (
             <button
               onClick={() => generateCarePlan(r.id, r.result)}
               disabled={carePlanLoading[r.id]}
+              style={{ marginTop: 10 }}
             >
-              {carePlanLoading[r.id] ? 'Generating Care Plan...' : '🧠 Generate Care Plan'}
+              {carePlanLoading[r.id] ? 'Loading...' : '🧠 Generate Care Plan'}
             </button>
           )}
           <br /><br />
-          <button onClick={() => exportAsPDF(r.id)}>📄 Export as PDF</button>{' '}
-          <button onClick={() => deletePOC(r.id)} style={{ color: 'red' }}>
+          <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>{' '}
+          <button onClick={() => deletePOC(r.id)} style={{ color: 'red', marginLeft: 10 }}>
             Delete
           </button>
         </div>
