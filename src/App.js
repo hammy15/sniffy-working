@@ -57,6 +57,26 @@ function App() {
       alert('Login failed: ' + err.message);
     }
   };
+const [userData, setUserData] = useState(null);
+
+useEffect(() => {
+  const unsub = onAuthStateChanged(auth, async (u) => {
+    if (u) {
+      setUser(u);
+      await fetchPOCs(u.uid);
+      const userDoc = await getDoc(doc(db, 'users', u.uid));
+      if (userDoc.exists()) {
+        setUserData(userDoc.data());
+      } else {
+        setUserData({ pro: false });
+      }
+    } else {
+      setUser(null);
+      setUserData(null);
+    }
+  });
+  return unsub;
+}, []);
 
   const handleLogout = () => signOut(auth);
 
@@ -217,7 +237,7 @@ function App() {
         <button onClick={handleLogout}>Logout</button>
       </div>
 
-      {!user.pro && (
+      {!userData?.pro && (
         <div style={{ marginTop: 20, padding: 20, background: '#fff0f0', border: '1px solid red' }}>
           <h3>💳 Unlock POC Generator</h3>
           <p>To generate a Plan of Correction, please complete a one-time payment.</p>
@@ -259,7 +279,7 @@ function App() {
         onChange={e => setFTags(e.target.value)}
         style={{ width: '100%', padding: 10, margin: '10px 0' }}
       />
-      <button onClick={generatePOC} disabled={loading || !user.pro} style={{ padding: 10 }}>
+      <button onClick={generatePOC} disabled={loading || !userData?.pro} style={{ padding: 10 }}>
         {loading ? 'Generating...' : '🧠 Generate POC'}
       </button>
 
