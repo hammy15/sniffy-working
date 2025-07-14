@@ -1,5 +1,5 @@
-// App.js
-
+// App.js - SNIFFY
+// Import core
 import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import html2canvas from 'html2canvas';
@@ -17,13 +17,11 @@ import {
   getDocs,
   updateDoc,
   deleteDoc,
-  doc,
-  getDoc
+  doc
 } from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
-
 function App() {
   const [user, setUser] = useState(undefined);
   const [email, setEmail] = useState('');
@@ -34,16 +32,12 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const [selectedState, setSelectedState] = useState('');
-  const [hasPaid, setHasPaid] = useState(false);
   const exportRefs = useRef({});
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u ?? null);
-      if (u) {
-        fetchPOCs(u.uid);
-        checkPayment(u.uid);
-      }
+      if (u) fetchPOCs(u.uid);
     });
     return unsub;
   }, []);
@@ -52,26 +46,6 @@ function App() {
     const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     setResults(data);
-  };
-
-  const checkPayment = async (uid) => {
-    const docRef = doc(db, 'users', uid);
-    const userSnap = await getDoc(docRef);
-    setHasPaid(userSnap.exists() && userSnap.data().hasPaid === true);
-  };
-
-  const handleStripeCheckout = async () => {
-    const res = await fetch('/api/create-checkout-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ uid: user.uid })
-    });
-    const data = await res.json();
-    if (data.url) {
-      window.location.href = data.url;
-    } else {
-      alert('Unable to initiate checkout');
-    }
   };
 
   const handleLogin = async () => {
@@ -83,86 +57,22 @@ function App() {
   };
 
   const handleLogout = () => signOut(auth);
-
-  const generatePOC = async () => {
-    setLoading(true);
+  const handleStripeCheckout = async () => {
     try {
-      const res = await fetch('/api/generatePOC', {
+      const res = await fetch('/api/create-checkout-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputText,
-          fTags: fTags.split(',').map(f => f.trim())
-        })
+        body: JSON.stringify({ email: user.email, uid: user.uid })
       });
       const data = await res.json();
-      if (data.result) {
-        const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
-          inputText,
-          fTags,
-          result: data.result,
-          selectedState,
-          timestamp: new Date()
-        });
-        setResults([{ id: docRef.id, inputText, fTags, result: data.result, selectedState }, ...results]);
-        setInputText('');
-        setFTags('');
+      if (data.url) {
+        window.location.href = data.url;
       } else {
-        alert('No result from GPT');
+        alert('Checkout session failed.');
       }
     } catch (err) {
-      alert('Error generating POC: ' + err.message);
+      alert('Stripe checkout error: ' + err.message);
     }
-    setLoading(false);
-  };
-
-  const generateCarePlan = async (pocId, pocText) => {
-    setCarePlanLoading(prev => ({ ...prev, [pocId]: true }));
-    try {
-      const res = await fetch('/api/generateCarePlan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pocText })
-      });
-      const data = await res.json();
-      if (data.carePlan) {
-        const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
-        await updateDoc(docRef, { carePlan: data.carePlan });
-        setResults(results.map(r => r.id === pocId ? { ...r, carePlan: data.carePlan } : r));
-      } else {
-        alert('No care plan returned.');
-      }
-    } catch (err) {
-      alert('Error generating care plan: ' + err.message);
-    }
-    setCarePlanLoading(prev => ({ ...prev, [pocId]: false }));
-  };
-
-  const deletePOC = async (id) => {
-    await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
-    setResults(results.filter(r => r.id !== id));
-  };
-
-  const exportAsPDF = async (id) => {
-    const element = exportRefs.current[id];
-    if (!element) return;
-    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const imgProps = pdf.getImageProperties(imgData);
-    const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-    let heightLeft = imgHeight, position = 0;
-
-    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-    heightLeft -= pdf.internal.pageSize.getHeight();
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight;
-      pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdf.internal.pageSize.getHeight();
-    }
-    pdf.save(`POC-${id}.pdf`);
   };
 
   const extractTextFromPDF = async (file) => {
@@ -191,14 +101,25 @@ function App() {
       if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
-
   if (user === undefined) return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+
   if (user === null) {
     return (
       <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
         <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
-        <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
         <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
       </div>
     );
@@ -211,37 +132,52 @@ function App() {
         <button onClick={handleLogout}>Logout</button>
       </div>
 
-      {!hasPaid && (
-        <div style={{ background: '#fff3cd', padding: 20, borderRadius: 8, marginTop: 20 }}>
+      {!user.pro && (
+        <div style={{ marginTop: 20, padding: 20, background: '#fff0f0', border: '1px solid red' }}>
           <h3>💳 Unlock POC Generator</h3>
-          <p>To generate a Plan of Correction, please complete a one-time $5 payment.</p>
-          <button onClick={handleStripeCheckout} style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff' }}>
+          <p>To generate a Plan of Correction, please complete a one-time payment.</p>
+          <button
+            onClick={handleStripeCheckout}
+            style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff', border: 'none' }}
+          >
             Pay $5 to Unlock
           </button>
         </div>
       )}
+      <h3>📎 Upload CMS-2567 PDF</h3>
+      <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
+        <input {...getInputProps()} />
+        {isDragActive ? (
+          <p><strong>Drop PDF here...</strong></p>
+        ) : (
+          <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>
+        )}
+      </div>
 
-      {hasPaid && (
-        <>
-          <h3>📎 Upload CMS-2567 PDF</h3>
-          <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
-            <input {...getInputProps()} />
-            {isDragActive ? <p><strong>Drop PDF here...</strong></p> : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
-          </div>
+      <h3>📍 Select Your State</h3>
+      <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
+        <option value="">-- Select a State (Optional) --</option>
+        {Object.keys(StateRegulations).sort().map(state => (
+          <option key={state} value={state}>{state}</option>
+        ))}
+      </select>
 
-          <h3>📍 Select Your State</h3>
-          <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width: '100%', padding: 10, marginBottom: 20 }}>
-            <option value="">-- Select a State (Optional) --</option>
-            {Object.keys(StateRegulations).sort().map(state => (
-              <option key={state} value={state}>{state}</option>
-            ))}
-          </select>
-
-          <textarea rows="5" style={{ width: '100%', padding: 10 }} placeholder="Paste deficiency text here..." value={inputText} onChange={e => setInputText(e.target.value)} />
-          <input placeholder="F-Tags (e.g. F684, F689)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width: '100%', padding: 10, margin: '10px 0' }} />
-          <button onClick={generatePOC} disabled={loading} style={{ padding: 10 }}>{loading ? 'Generating...' : '🧠 Generate POC'}</button>
-        </>
-      )}
+      <textarea
+        rows="5"
+        style={{ width: '100%', padding: 10 }}
+        placeholder="Paste deficiency text here..."
+        value={inputText}
+        onChange={e => setInputText(e.target.value)}
+      />
+      <input
+        placeholder="F-Tags (e.g. F684, F689)"
+        value={fTags}
+        onChange={e => setFTags(e.target.value)}
+        style={{ width: '100%', padding: 10, margin: '10px 0' }}
+      />
+      <button onClick={generatePOC} disabled={loading || !user.pro} style={{ padding: 10 }}>
+        {loading ? 'Generating...' : '🧠 Generate POC'}
+      </button>
 
       <hr style={{ margin: '40px 0' }} />
       <h3>📂 Saved POCs</h3>
@@ -256,16 +192,22 @@ function App() {
             {r.selectedState && (
               <div>
                 <p><strong>State-Specific Regulations for {r.selectedState}:</strong></p>
-                {StateRegulations[r.selectedState]?.map((reg, index) => (
-                  <p key={index}><strong>{reg.tag}:</strong> {reg.regulation}</p>
-                ))}
+                {r.fTags.split(',').map(tag => {
+                  const cleanTag = tag.trim();
+                  const reg = StateRegulations[r.selectedState]?.[cleanTag];
+                  return reg ? <p key={tag}><strong>{cleanTag}:</strong> {reg}</p> : null;
+                })}
               </div>
             )}
 
             <small>Generated for: {user.email}</small>
           </div>
           {!r.carePlan && (
-            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
+            <button
+              onClick={() => generateCarePlan(r.id, r.result)}
+              disabled={carePlanLoading[r.id]}
+              style={{ marginTop: 10 }}
+            >
               {carePlanLoading[r.id] ? 'Generating...' : '🧠 Generate Care Plan'}
             </button>
           )}
