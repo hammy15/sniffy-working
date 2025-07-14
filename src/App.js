@@ -21,7 +21,8 @@ import html2canvas from 'html2canvas';
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(undefined); // undefined = loading
+
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [inputText, setInputText] = useState('');
@@ -34,6 +35,7 @@ function App() {
  useEffect(() => {
   const unsub = onAuthStateChanged(auth, (u) => {
     setUser(u ?? null);
+    if (u) fetchPOCs(u.uid);
   });
   return unsub;
 }, []);
@@ -53,7 +55,9 @@ function App() {
   };
 
   const handleLogout = () => signOut(auth);
-
+if (user === undefined) {
+  return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+}
   if (!user) {
 if (user === undefined) return <p>Checking login...</p>;
 
