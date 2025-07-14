@@ -32,15 +32,16 @@ function App() {
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
 
- useEffect(() => {
-  console.log("Checking auth...");
+useEffect(() => {
+  console.log("👀 Checking auth...");
   const unsub = onAuthStateChanged(auth, (u) => {
-    console.log("Auth state changed:", u);
+    console.log("✅ Auth result:", u);
     setUser(u ?? null);
     if (u) fetchPOCs(u.uid);
   });
   return unsub;
 }, []);
+
 
   const fetchPOCs = async (uid) => {
     const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
