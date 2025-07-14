@@ -1,5 +1,7 @@
-// /api/create-checkout-session.js
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+// /api/create-checkout-session.js (Node.js with Stripe SDK)
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export default async function handler(req, res) {
   if (req.method === 'POST') {
@@ -12,9 +14,9 @@ export default async function handler(req, res) {
             price_data: {
               currency: 'usd',
               product_data: {
-                name: 'SNIFFY Monthly Subscription',
+                name: 'SNIFFY POC Generator Access',
               },
-              unit_amount: 1500, // $15.00
+              unit_amount: 500, // $5.00
             },
             quantity: 1,
           },
@@ -23,7 +25,7 @@ export default async function handler(req, res) {
         cancel_url: `${req.headers.origin}/cancel`,
       });
 
-      res.status(200).json({ id: session.id });
+      res.status(200).json({ url: session.url });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -32,4 +34,3 @@ export default async function handler(req, res) {
     res.status(405).end('Method Not Allowed');
   }
 }
-
