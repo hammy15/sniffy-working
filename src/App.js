@@ -1,23 +1,23 @@
+// App.js
 import React, { useState, useEffect, useRef } from 'react';
-import { useDropzone } from 'react-dropzone';
-import * as pdfjsLib from 'pdfjs-dist';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-
 import { auth, db } from './firebase';
 import {
-  onAuthStateChanged,
   signInWithEmailAndPassword,
+  onAuthStateChanged,
   signOut
 } from 'firebase/auth';
 import {
   collection,
   addDoc,
   getDocs,
+  updateDoc,
   deleteDoc,
-  doc,
-  updateDoc
+  doc
 } from 'firebase/firestore';
+import { useDropzone } from 'react-dropzone';
+import * as pdfjsLib from 'pdfjs-dist';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -28,8 +28,10 @@ function App() {
   const [inputText, setInputText] = useState('');
   const [fTags, setFTags] = useState('');
   const [results, setResults] = useState([]);
+  const [state, setState] = useState('TX');
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
+  const [regLoading, setRegLoading] = useState({});
   const exportRefs = useRef({});
 
   useEffect(() => {
@@ -60,16 +62,26 @@ function App() {
 
   const handleLogout = () => signOut(auth);
 
+  if (user === undefined) return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+
+  if (user === null) {
+    return (
+      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
+        <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
+        <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} style={{ width: '100%', padding: 8, marginBottom: 10 }} />
+        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
+      </div>
+    );
+  }
+
   const generatePOC = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/generatePOC', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputText,
-          fTags: fTags.split(',').map(f => f.trim())
-        })
+        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f => f.trim()) })
       });
       const data = await res.json();
       if (data.result) {
@@ -103,9 +115,7 @@ function App() {
       if (data.carePlan) {
         const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
         await updateDoc(docRef, { carePlan: data.carePlan });
-        setResults(results.map(r =>
-          r.id === pocId ? { ...r, carePlan: data.carePlan } : r
-        ));
+        setResults(results.map(r => r.id === pocId ? { ...r, carePlan: data.carePlan } : r));
       } else {
         alert('No care plan returned.');
       }
@@ -113,6 +123,29 @@ function App() {
       alert('Error generating care plan: ' + err.message);
     }
     setCarePlanLoading(prev => ({ ...prev, [pocId]: false }));
+  };
+
+  const fetchStateRules = async (pocId, fTagString) => {
+    const fTagsArray = fTagString.split(',').map(f => f.trim());
+    setRegLoading(prev => ({ ...prev, [pocId]: true }));
+    try {
+      const res = await fetch('/api/fetchStateRegulations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state, fTags: fTagsArray })
+      });
+      const data = await res.json();
+      if (data.stateSummary) {
+        const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
+        await updateDoc(docRef, { stateRegulations: data.stateSummary });
+        setResults(results.map(r => r.id === pocId ? { ...r, stateRegulations: data.stateSummary } : r));
+      } else {
+        alert('No regulations returned.');
+      }
+    } catch (err) {
+      alert('Error fetching state rules: ' + err.message);
+    }
+    setRegLoading(prev => ({ ...prev, [pocId]: false }));
   };
 
   const deletePOC = async (id) => {
@@ -171,32 +204,6 @@ function App() {
     }
   });
 
-  if (user === undefined) {
-    return <div style={{ padding: 40 }}>🔄 Loading...</div>;
-  }
-
-  if (user === null) {
-    return (
-      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={pass}
-          onChange={e => setPass(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
-      </div>
-    );
-  }
-
   return (
     <div style={{ padding: '40px 20px', maxWidth: 900, margin: '0 auto', fontFamily: 'sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -243,6 +250,14 @@ function App() {
       <hr style={{ margin: '40px 0' }} />
 
       <h3>📂 Saved POCs</h3>
+      <label>📍 Select State: &nbsp;
+        <select value={state} onChange={(e) => setState(e.target.value)}>
+          {['TX', 'CA', 'NY', 'FL', 'WA', 'ID', 'OR'].map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </label>
+
       {results.map(r => (
         <div
           key={r.id}
@@ -260,6 +275,12 @@ function App() {
                 <pre>{r.carePlan}</pre>
               </>
             )}
+            {r.stateRegulations && (
+              <>
+                <p><strong>State Rules for {state}:</strong></p>
+                <pre>{r.stateRegulations}</pre>
+              </>
+            )}
             <small>Generated for: {user.email}</small>
           </div>
           {!r.carePlan && (
@@ -272,6 +293,12 @@ function App() {
             </button>
           )}
           <br /><br />
+          <button
+            onClick={() => fetchStateRules(r.id, r.fTags)}
+            disabled={regLoading[r.id]}
+          >
+            {regLoading[r.id] ? 'Fetching...' : '📜 Fetch State Rules'}
+          </button>{' '}
           <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>{' '}
           <button onClick={() => deletePOC(r.id)} style={{ color: 'red', marginLeft: 10 }}>
             Delete
