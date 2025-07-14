@@ -32,8 +32,6 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { useEffect, useState, useRef } from 'react';
 
-import { auth } from './firebase'; // make sure this matches your file path
-
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 function App() {
