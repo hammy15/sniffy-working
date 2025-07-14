@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import * as pdfjsLib from 'pdfjs-dist';
-import { auth, db } from './firebase';
+import { auth } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
 import {
   signInWithEmailAndPassword,
   onAuthStateChanged,
