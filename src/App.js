@@ -58,29 +58,31 @@ function App() {
 if (user === undefined) {
   return <div style={{ padding: 40 }}>🔄 Loading...</div>;
 }
-  if (!user) {
-if (user === undefined) return <p>Checking login...</p>;
+  if (user === undefined) {
+  return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+}
 
-    return (
-      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={pass}
-          onChange={e => setPass(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
-      </div>
-    );
-  }
+if (user === null) {
+  return (
+    <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+      <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
+      <input
+        placeholder="Email"
+        value={email}
+        onChange={e => setEmail(e.target.value)}
+        style={{ width: '100%', padding: 8, marginBottom: 10 }}
+      />
+      <input
+        type="password"
+        placeholder="Password"
+        value={pass}
+        onChange={e => setPass(e.target.value)}
+        style={{ width: '100%', padding: 8, marginBottom: 10 }}
+      />
+      <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
+    </div>
+  );
+}
   const generatePOC = async () => {
     setLoading(true);
     try {
