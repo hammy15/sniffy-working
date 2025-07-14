@@ -1,58 +1,57 @@
+// pages/api/create-checkout-session.js
 import Stripe from 'stripe';
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth } from 'firebase-admin/auth';
+import { initializeApp, applicationDefault, cert } from 'firebase-admin/app';
 
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16',
+});
 
-// Initialize Firebase Admin (only once)
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
-
-try {
+// Optionally initialize Firebase Admin SDK if needed
+if (!getAuth().app) {
   initializeApp({
-    credential: cert(serviceAccount),
+    credential: applicationDefault(), // or use cert() if you're providing service account manually
   });
-} catch (e) {
-  // Avoid error on re-initialization in dev
 }
 
-const db = getFirestore();
-
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end('Method Not Allowed');
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-  const { uid, email } = req.body;
+  const { email, uid } = req.body;
 
-  if (!uid || !email) {
-    return res.status(400).json({ error: 'Missing UID or email' });
+  if (!email || !uid) {
+    return res.status(400).json({ error: 'Missing user metadata' });
   }
 
   try {
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
       mode: 'payment',
+      payment_method_types: ['card'],
       line_items: [
         {
           price_data: {
             currency: 'usd',
-            unit_amount: 500,
             product_data: {
-              name: 'Unlock SNIFFY POC Generator',
-              description: 'One-time $5 payment to access the Plan of Correction tool',
+              name: 'SNIFFY POC Generator – Lifetime Access',
             },
+            unit_amount: 500, // $5.00
           },
           quantity: 1,
         },
       ],
-      customer_email: email,
-      metadata: { uid },
-      success_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?success=true`,
-      cancel_url: `${process.env.NEXT_PUBLIC_BASE_URL}/?canceled=true`,
+      metadata: {
+        email,
+        uid,
+      },
+      success_url: `${req.headers.origin}?success=true`,
+      cancel_url: `${req.headers.origin}?canceled=true`,
     });
 
     res.status(200).json({ url: session.url });
   } catch (err) {
-    console.error('Stripe error:', err.message);
-    res.status(500).json({ error: 'Stripe session creation failed' });
+    console.error('Stripe checkout error:', err.message);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 }
