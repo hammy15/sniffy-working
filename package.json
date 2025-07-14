@@ -5,6 +5,8 @@
   "dependencies": {
     "firebase": "^9.6.1",
     "html2canvas": "^1.4.1",
+    "pdfjs-dist": "^3.10.111",
+
     "jspdf": "^2.5.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
