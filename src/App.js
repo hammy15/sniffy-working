@@ -1,24 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  signInWithEmailAndPassword,
-  onAuthStateChanged,
-  signOut
-} from 'firebase/auth';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  deleteDoc,
-  doc,
-  updateDoc
-} from 'firebase/firestore';
+import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { useDropzone } from 'react-dropzone';
 import * as pdfjsLib from 'pdfjs-dist';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-
 import { auth, db } from './firebase';
-import StateRegulations from './StateRegulations';
+import { stateRegulations } from './StateRegulations';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
@@ -31,6 +19,8 @@ function App() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
+  const [selectedState, setSelectedState] = useState('');
+  const [regSummary, setRegSummary] = useState('');
   const exportRefs = useRef({});
 
   useEffect(() => {
@@ -128,17 +118,18 @@ function App() {
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
     const imgProps = pdf.getImageProperties(imgData);
     const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
     let heightLeft = imgHeight;
     let position = 0;
     pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-    heightLeft -= pdf.internal.pageSize.getHeight();
+    heightLeft -= pdfHeight;
     while (heightLeft > 0) {
       position = heightLeft - imgHeight;
       pdf.addPage();
       pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-      heightLeft -= pdf.internal.pageSize.getHeight();
+      heightLeft -= pdfHeight;
     }
     pdf.save(`POC-${id}.pdf`);
   };
@@ -171,9 +162,7 @@ function App() {
     }
   });
 
-  if (user === undefined) {
-    return <div style={{ padding: 40 }}>🔄 Loading...</div>;
-  }
+  if (user === undefined) return <div style={{ padding: 40 }}>🔄 Loading...</div>;
 
   if (user === null) {
     return (
@@ -221,6 +210,28 @@ function App() {
           <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiencies and F-Tags.</p>
         )}
       </div>
+
+      <h3>🏛️ State Regulations</h3>
+      <select
+        value={selectedState}
+        onChange={(e) => {
+          const state = e.target.value;
+          setSelectedState(state);
+          setRegSummary(stateRegulations[state] || 'No state-specific regulations available.');
+        }}
+        style={{ width: '100%', padding: 10, marginBottom: 20 }}
+      >
+        <option value="">Select a state</option>
+        {Object.keys(stateRegulations).map(state => (
+          <option key={state} value={state}>{state}</option>
+        ))}
+      </select>
+      {selectedState && (
+        <div style={{ backgroundColor: '#f9f9f9', padding: 20, borderRadius: 10, marginBottom: 30 }}>
+          <h4>{selectedState} Regulations Summary</h4>
+          <p>{regSummary}</p>
+        </div>
+      )}
 
       <h3>📝 Generate Plan of Correction</h3>
       <textarea
@@ -278,8 +289,6 @@ function App() {
           </button>
         </div>
       ))}
-
-      <StateRegulations />
     </div>
   );
 }
