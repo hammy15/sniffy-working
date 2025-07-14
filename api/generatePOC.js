@@ -6,23 +6,11 @@ export default async function handler(req, res) {
   const { inputText, fTags } = req.body;
 
   const apiKey = process.env.OPENAI_API_KEY;
-
   if (!apiKey) {
-    return res.status(500).json({ error: 'Missing OpenAI API key in environment variables' });
+    return res.status(500).json({ error: 'Missing OpenAI API key' });
   }
 
-  const prompt = `
-You are a compliance consultant for skilled nursing facilities.
-Given the following deficiency narrative and F-tags, generate a CMS-compliant Plan of Correction (POC) including:
-- Root cause
-- Corrective actions
-- Monitoring plan
-- Completion date
-
-F-tags: ${fTags.join(', ')}
-Narrative:
-${inputText}
-`;
+  const prompt = `F-tags: ${fTags.join(', ')}\nNarrative: ${inputText}`;
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -34,7 +22,7 @@ ${inputText}
       body: JSON.stringify({
         model: 'gpt-4',
         messages: [
-          { role: 'system', content: 'You are a compliance expert writing Plans of Correction (POCs) for skilled nursing facilities.' },
+          { role: 'system', content: 'You are a compliance expert generating SNF Plans of Correction.' },
           { role: 'user', content: prompt }
         ],
         temperature: 0.2
@@ -47,8 +35,8 @@ ${inputText}
       return res.status(500).json({ error: data.error.message });
     }
 
-    return res.status(200).json({ result: data.choices?.[0]?.message?.content || 'No response from GPT.' });
+    res.status(200).json({ result: data.choices?.[0]?.message?.content || 'No response from GPT.' });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 }
