@@ -1,5 +1,4 @@
 // App.js - SNIFFY
-// Import core
 import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import html2canvas from 'html2canvas';
@@ -35,13 +34,16 @@ function App() {
   const exportRefs = useRef({});
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u ?? null);
-      if (u) fetchPOCs(u.uid);
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        setUser(u);
+        await fetchPOCs(u.uid);
+      } else {
+        setUser(null);
+      }
     });
     return unsub;
   }, []);
-
   const fetchPOCs = async (uid) => {
     const snapshot = await getDocs(collection(db, 'users', uid, 'pocs'));
     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -57,6 +59,7 @@ function App() {
   };
 
   const handleLogout = () => signOut(auth);
+
   const handleStripeCheckout = async () => {
     try {
       const res = await fetch('/api/create-checkout-session', {
@@ -74,7 +77,86 @@ function App() {
       alert('Stripe checkout error: ' + err.message);
     }
   };
+  const generatePOC = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/generatePOC', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inputText,
+          fTags: fTags.split(',').map(f => f.trim())
+        })
+      });
+      const data = await res.json();
+      if (data.result) {
+        const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
+          inputText,
+          fTags,
+          result: data.result,
+          selectedState,
+          timestamp: new Date()
+        });
+        setResults([{ id: docRef.id, inputText, fTags, result: data.result, selectedState }, ...results]);
+        setInputText('');
+        setFTags('');
+      } else {
+        alert('No result from GPT');
+      }
+    } catch (err) {
+      alert('Error generating POC: ' + err.message);
+    }
+    setLoading(false);
+  };
 
+  const generateCarePlan = async (pocId, pocText) => {
+    setCarePlanLoading(prev => ({ ...prev, [pocId]: true }));
+    try {
+      const res = await fetch('/api/generateCarePlan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pocText })
+      });
+      const data = await res.json();
+      if (data.carePlan) {
+        const docRef = doc(db, 'users', user.uid, 'pocs', pocId);
+        await updateDoc(docRef, { carePlan: data.carePlan });
+        setResults(results.map(r => r.id === pocId ? { ...r, carePlan: data.carePlan } : r));
+      } else {
+        alert('No care plan returned.');
+      }
+    } catch (err) {
+      alert('Error generating care plan: ' + err.message);
+    }
+    setCarePlanLoading(prev => ({ ...prev, [pocId]: false }));
+  };
+
+  const deletePOC = async (id) => {
+    await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
+    setResults(results.filter(r => r.id !== id));
+  };
+
+  const exportAsPDF = async (id) => {
+    const element = exportRefs.current[id];
+    if (!element) return;
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const imgProps = pdf.getImageProperties(imgData);
+    const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    let heightLeft = imgHeight, position = 0;
+
+    pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+    heightLeft -= pdf.internal.pageSize.getHeight();
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight;
+      pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdf.internal.pageSize.getHeight();
+    }
+    pdf.save(`POC-${id}.pdf`);
+  };
   const extractTextFromPDF = async (file) => {
     const reader = new FileReader();
     reader.onload = async function () {
@@ -101,22 +183,33 @@ function App() {
       if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
-  if (user === undefined); {
-  return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
-}
+  if (user === undefined) {
+    return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
+  }
 
-
-if (user === null) {
-  return (
-    <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-      <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-      <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
-      <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} />
-      <button onClick={handleLogin}>Login</button>
-    </div>
-  );
-}
-
+  if (user === null) {
+    return (
+      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
+        <input
+          placeholder="Email"
+          value={email}
+          onChange={e => setEmail(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={pass}
+          onChange={e => setPass(e.target.value)}
+          style={{ width: '100%', padding: 8, marginBottom: 10 }}
+        />
+        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>
+          Login
+        </button>
+      </div>
+    );
+  }
   return (
     <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -136,14 +229,13 @@ if (user === null) {
           </button>
         </div>
       )}
+
       <h3>📎 Upload CMS-2567 PDF</h3>
       <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
         <input {...getInputProps()} />
-        {isDragActive ? (
-          <p><strong>Drop PDF here...</strong></p>
-        ) : (
-          <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>
-        )}
+        {isDragActive
+          ? <p><strong>Drop PDF here...</strong></p>
+          : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
       </div>
 
       <h3>📍 Select Your State</h3>
@@ -179,7 +271,11 @@ if (user === null) {
             <p><strong>F-Tags:</strong> {r.fTags}</p>
             <p><strong>Deficiency:</strong></p><pre>{r.inputText}</pre>
             <p><strong>Plan of Correction:</strong></p><pre>{r.result}</pre>
-            {r.carePlan && (<><p><strong>Care Plan:</strong></p><pre>{r.carePlan}</pre></>)}
+            {r.carePlan && (
+              <>
+                <p><strong>Care Plan:</strong></p><pre>{r.carePlan}</pre>
+              </>
+            )}
 
             {r.selectedState && (
               <div>
@@ -191,15 +287,11 @@ if (user === null) {
                 })}
               </div>
             )}
-
             <small>Generated for: {user.email}</small>
           </div>
+
           {!r.carePlan && (
-            <button
-              onClick={() => generateCarePlan(r.id, r.result)}
-              disabled={carePlanLoading[r.id]}
-              style={{ marginTop: 10 }}
-            >
+            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop: 10 }}>
               {carePlanLoading[r.id] ? 'Generating...' : '🧠 Generate Care Plan'}
             </button>
           )}
