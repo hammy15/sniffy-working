@@ -101,29 +101,20 @@ function App() {
       if (acceptedFiles.length > 0) extractTextFromPDF(acceptedFiles[0]);
     }
   });
-  if (user === undefined) return <div style={{ padding: 40 }}>🔄 Loading...</div>;
+  ifif (user === undefined) {
+  return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
+}
 
-  if (user === null) {
-    return (
-      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input
-          placeholder="Email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={pass}
-          onChange={e => setPass(e.target.value)}
-          style={{ width: '100%', padding: 8, marginBottom: 10 }}
-        />
-        <button onClick={handleLogin} style={{ width: '100%', padding: 10 }}>Login</button>
-      </div>
-    );
-  }
+if (user === null) {
+  return (
+    <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
+      <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
+      <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} />
+      <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} />
+      <button onClick={handleLogin}>Login</button>
+    </div>
+  );
+}
 
   return (
     <div style={{ padding: 40, maxWidth: 900, margin: '0 auto' }}>
