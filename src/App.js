@@ -237,18 +237,7 @@ useEffect(() => {
         <button onClick={handleLogout}>Logout</button>
       </div>
 
-      {!userData?.pro && (
-        <div style={{ marginTop: 20, padding: 20, background: '#fff0f0', border: '1px solid red' }}>
-          <h3>💳 Unlock POC Generator</h3>
-          <p>To generate a Plan of Correction, please complete a one-time payment.</p>
-          <button
-            onClick={handleStripeCheckout}
-            style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff', border: 'none' }}
-          >
-            Pay $5 to Unlock
-          </button>
-        </div>
-      )}
+     
 
       <h3>📎 Upload CMS-2567 PDF</h3>
       <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40, textAlign: 'center', background: '#eef7ff', marginBottom: 20, borderRadius: 8 }}>
