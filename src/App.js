@@ -39,12 +39,19 @@ function App() {
 
 useEffect(() => {
   console.log("👀 Checking auth...");
-  const unsub = onAuthStateChanged(auth, (u) => {
+
+  const unsubscribe = onAuthStateChanged(auth, (u) => {
     console.log("✅ Auth result:", u);
-    setUser(u ?? null);
-    if (u) fetchPOCs(u.uid);
+
+    if (u) {
+      setUser(u);         // user is logged in
+      fetchPOCs(u.uid);   // load their saved data
+    } else {
+      setUser(null);      // not logged in
+    }
   });
-  return unsub;
+
+  return unsubscribe;
 }, []);
 
 
