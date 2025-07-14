@@ -55,6 +55,13 @@ function App() {
       alert('Login failed: ' + err.message);
     }
   };
+<div style={{ marginTop: 20 }}>
+  <h3>💳 Unlock POC Generator</h3>
+  <p>To generate a Plan of Correction, please complete a one-time payment.</p>
+  <button onClick={handleStripeCheckout} style={{ padding: 10, backgroundColor: '#0077cc', color: '#fff' }}>
+    Pay $5 to Unlock
+  </button>
+</div>
 
   const handleLogout = () => signOut(auth);
 
