@@ -316,9 +316,10 @@ useEffect(() => {
           <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>
           <button onClick={() => deletePOC(r.id)} style={{ marginLeft: 10, color: 'red' }}>Delete</button>
         </div>
-      ))}
-    </div>
-  );
+      {/* your saved POCs mapping */}
+  ))}
+</div>
+);
 }
 
 export default App;
