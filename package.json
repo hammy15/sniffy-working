@@ -4,6 +4,8 @@
   "private": true,
   "dependencies": {
     "firebase": "^9.6.1",
+    "react-dropzone": "^14.2.3",
+
     "html2canvas": "^1.4.1",
     "pdfjs-dist": "^3.10.111",
 
