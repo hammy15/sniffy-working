@@ -36,3 +36,23 @@ export function weightedScore(periodScores = []) {
     .slice(0,3)
     .reduce((sum, s, i) => sum + (s * (weights[i] || 0)), 0);
 }
+import { deficiencyPoints, revisitPoints, weightedScore } from './scoring';
+
+export default async function handler(req, res) {
+  const { deficienciesByPeriod, revisitCounts } = req.body;
+  // Example structure:
+  // deficienciesByPeriod: [{codes:['F','J'], subFlags:[false,true]}, ...]
+  // revisitCounts: [1,2,1]
+
+  const periodScores = deficienciesByPeriod.map((list, idx) => {
+    const sumDef = list.codes.reduce((sum, ltr, i) =>
+      sum + deficiencyPoints(ltr, list.subFlags[i]), 0);
+    const sumRevisit = revisitPoints(sumDef, revisitCounts[idx]);
+    return sumDef + sumRevisit;
+  });
+
+  const totalScore = weightedScore(periodScores);
+  // ... use totalScore in POC logic, GPT prompt context
+  
+  res.status(200).json({ totalScore });
+}
