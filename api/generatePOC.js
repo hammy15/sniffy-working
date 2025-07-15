@@ -1,76 +1,34 @@
-import { Configuration, OpenAIApi } from 'openai';
-import admin from 'firebase-admin';
-import { scoring } from '../../scoring'; // your scoring logic
-import StateRegulations from '../../StateRegulations'; // to reference state rules
-
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.applicationDefault(),
-  });
-}
-
-const db = admin.firestore();
-const openai = new OpenAIApi(new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-}));
+// pages/api/generatePOC.js
+import { totalScore } from '../../scoring.js';
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+  const { inputText, fTags, selectedState } = req.body;
+  // TODO: parse inputText to map tags -> {scopeSeverity, isSQC?}
+  const deficiencies = parseDeficiencies(inputText, fTags);
 
-  const { inputText, fTags, selectedState, uid } = req.body;
-  if (!inputText || !fTags || !uid) {
-    return res.status(400).json({ error: 'Missing required fields.' });
-  }
+  // Calculate total CMS score
+  const cmsScore = totalScore(deficiencies);
 
-  try {
-    // 🌟 Scoring logic: severity & point breakdown
-    const severitySummary = scoring(fTags);
+  // Build prompt including context, scoring, comparison, and draft POC
+  const prompt = `
+You are a clinical nurse drafting a POC for CMS CMS‑2567 deficiencies.
+Deficiencies:
+${deficiencies.map(d => `${d.tag} – ${d.scope}, SQC: ${d.isSQC}`).join('\n')}
 
-    // Fetch state regs for relevant tags
-    const stateRegs = {};
-    if (selectedState && StateRegulations[selectedState]) {
-      fTags.forEach(tag => {
-        if (StateRegulations[selectedState][tag]) {
-          stateRegs[tag] = StateRegulations[selectedState][tag];
-        }
-      });
-    }
+Total CMS Health Inspection Score: ${cmsScore}
 
-    // Call GPT to generate POC per tag
-    const prompt = `
-For each F-tag: [${fTags.join(', ')}],
-Provide:
-- Tag
-- Scope (brief)
-- Severity (low/medium/high)
-- Plan of Correction
-Include severitySummary and state regulations if applicable.
-Output JSON.
-    `;
+State: ${selectedState || 'Federal-only'}
 
-    const response = await openai.createChatCompletion({
-      model: 'gpt-4',
-      messages: [{ role: 'system', content: prompt }],
-      temperature: 0.4,
-    });
+Please:
+1. Provide a structured POC per F‑Tag.
+2. Indicate scope/severity and points per tag.
+3. Scrub any PHI.
+4. Include CMS definitions & reference scope-severity grid.
+5. At end, compare this facility's score to the average in ${selectedState}.
+6. Title it professionally, section headers, printable format.
+  `;
 
-    const result = response.data.choices[0].message?.content.trim();
-    const pocData = JSON.parse(result);
-
-    // save enhanced metadata
-    await db.collection('users').doc(uid).collection('pocs').add({
-      inputText,
-      fTags,
-      selectedState,
-      pocData,
-      severitySummary,
-      stateRegs,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    res.status(200).json({ pocData, severitySummary, stateRegs });
-  } catch (err) {
-    console.error('generatePOC error', err);
-    res.status(500).json({ error: err.message });
-  }
+  // Call to OpenAI / GPT
+  const aiRes = await callOpenAI(prompt);
+  res.status(200).json({ poc: aiRes.choices[0].text, score: cmsScore });
 }
