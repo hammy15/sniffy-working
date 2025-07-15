@@ -1,75 +1,38 @@
 // scoring.js
+// Calculates deficiency and revisit scores per CMS methodology
+// Includes weighted average across three time periods
 
-// Scope & Severity grid scoring values (non-SQC and SQC where applicable)
-const SCORE_GRID = {
+// Scope-Severity lookup
+const GRID = {
   A: 0, B: 0, C: 0,
-  D: 2, E: 4, F: 6,
-  G: 10, H: 20, I: 30,
-  J: 50, K: 100, L: 150
+  D: 4, E: 8, F: 16,     // no-harm, > minimal
+  G: 20, H: 35, I: 45,   // actual harm
+  J: 50, K: 100, L: 150  // immediate jeopardy
 };
 
-// Substandard Quality of Care (SQC) supersets (higher values for grid cells in parentheses)
-const SQC_ADJUST = {
-  F: 10, G: 10, H: 25, I: 35, J: 75, K: 125, L: 175
-};
-
-/**
- * Compute score for one deficiency tag + scope/severity letter.
- * @param {string} tag - like "F684"
- * @param {string} ss - single letter A-L
- * @param {boolean} isSQC - whether falls under SQC regs (CFR 483.13/.15/.25)
- * @returns {number}
- */
-export function scoreDeficiency(tag, ss, isSQC = false) {
-  const base = SCORE_GRID[ss] ?? 0;
-  if (isSQC && SQC_ADJUST[ss]) {
-    return SQC_ADJUST[ss];
+// Returns points for a single deficiency code letter
+export function deficiencyPoints(letter, isSubstandard = false) {
+  let pts = GRID[letter] || 0;
+  if (isSubstandard) {
+    // Add substandard premium: e.g. F becomes 20 instead of 16, etc.
+    const SUB = { F:4, I:5, L:25 };
+    pts += SUB[letter] || 0;
   }
-  return base;
+  return pts;
 }
 
-/**
- * Given array of { tag, ss, isSQC }, sum total score.
- * @param {Array} items
- */
-export function totalScore(items) {
-  return items.reduce((sum, item) =>
-    sum + scoreDeficiency(item.tag, item.ss, item.isSQC), 0);
+// Add revisit points: second (50%), third (70%), fourth+ (85%)
+export function revisitPoints(baseScore, revisitCount) {
+  if (revisitCount <= 1) return 0;
+  if (revisitCount === 2) return baseScore * 0.5;
+  if (revisitCount === 3) return baseScore * 0.7;
+  return baseScore * 0.85;
 }
-// /api/generatePOC.js
-import { totalScore } from '../../scoring';
 
-export default async function handler(req, res) {
-  // ... existing code to extract deficiencies
-  const deficiencies = extractFromInput(inputText); // returns array with tag, scopeSeverity letter, etc.
-
-  const scoredItems = deficiencies.map(d => ({
-    ...d,
-    isSQC: checkIfSQC(d.tag), // your logic for SQC tags
-    score: scoreDeficiency(d.tag, d.ss, checkIfSQC(d.tag))
-  }));
-  const total = totalScore(scoredItems);
-
-  // include scores into prompt or downstream
-  const prompt = `
-    Deficiencies:
-    ${scoredItems.map(d => `${d.tag} (${d.ss}) isSQC=${d.isSQC} → ${d.score} pts`).join('\n')}
-    Total Deficiency Score: ${total}
-    Generate POC with scope, severity, score breakdown, compare to state averages...
-  `;
-  // send prompt to GPT...
+// Weight scores: periods = [most recent, previous, second prior]
+export function weightedScore(periodScores = []) {
+  const weights = [0.5, 0.333333, 0.166667];
+  return periodScores
+    .slice(0,3)
+    .reduce((sum, s, i) => sum + (s * (weights[i] || 0)), 0);
 }
-<p><strong>Total Deficiency Score:</strong> {result.totalScore}</p>
-<table>
-  <thead><tr><th>Tag</th><th>Scope/Severity</th><th>SQC</th><th>Score</th></tr></thead>
-  <tbody>
-    {result.scoredItems.map(item => (
-      <tr key={item.tag}>
-        <td>{item.tag}</td>
-        <td>{item.ss}</td>
-        <td>{item.isSQC ? 'Yes' : 'No'}</td>
-        <td>{item.score}</td>
-      </tr>
-    ))}
-  </tbody>
-</table>
