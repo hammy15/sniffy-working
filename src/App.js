@@ -21,8 +21,7 @@ import {
 } from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
 
-pdfjsLib.GlobalWorkerOptions.workerSrc =
-  `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 function App() {
   const [user, setUser] = useState(undefined);
   const [userData, setUserData] = useState(null);
@@ -30,111 +29,186 @@ function App() {
   const [pass, setPass] = useState('');
   const [inputText, setInputText] = useState('');
   const [fTags, setFTags] = useState('');
+  const [selectedState, setSelectedState] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [careLoading, setCareLoading] = useState({});
-  const [selectedState, setSelectedState] = useState('');
+  const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
   useEffect(() => {
-    return onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u);
+        await fetchPOCs(u.uid);
         const docSnap = await getDoc(doc(db, 'users', u.uid));
         setUserData(docSnap.exists() ? docSnap.data() : { pro: false });
-        const snap = await getDocs(collection(db, 'users', u.uid, 'pocs'));
-        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       } else {
         setUser(null);
         setUserData(null);
       }
     });
+    return unsub;
   }, []);
-  const handleLogin = async () => {
+  const fetchPOCs = async (uid) => {
+    const snap = await getDocs(collection(db, 'users', uid, 'pocs'));
+    setResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  };
+
+  const generatePOC = async () => {
+    if (!inputText || !fTags) return alert('Missing text or tags');
+    setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, pass);
+      const res = await fetch('/api/generatePOC', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(t=>t.trim()), selectedState })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.result) return alert(data?.error || `Server Error ${res.status}`);
+      const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
+        inputText, fTags, result: data.result, selectedState, timestamp: new Date()
+      });
+      setResults([{ id: docRef.id, inputText, fTags, result: data.result, selectedState }, ...results]);
+      setInputText(''); setFTags('');
     } catch (e) {
-      alert('Login failed: ' + e.message);
+      alert('POC generation failed: ' + e.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleLogout = () => signOut(auth);
-  const generatePOC = async () => {
-    setLoading(true);
-    // fetch /api/generatePOC ...
-    // store in Firestore
-    setLoading(false);
+  const generateCarePlan = async (id, pocText) => {
+    setCarePlanLoading(p => ({ ...p, [id]: true }));
+    try {
+      const res = await fetch('/api/generateCarePlan', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ pocText })
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.carePlan) return alert(data?.error || `Server Error ${res.status}`);
+      await updateDoc(doc(db, 'users', user.uid, 'pocs', id), { carePlan: data.carePlan });
+      setResults(r => r.map(d => d.id === id ? { ...d, carePlan: data.carePlan } : d));
+    } catch (e) {
+      alert('Care plan failed: ' + e.message);
+    } finally {
+      setCarePlanLoading(p => ({ ...p, [id]: false }));
+    }
   };
 
-  const generateCare = async (id, text) => {
-    setCareLoading(prev => ({ ...prev, [id]: true }));
-    // fetch /api/generateCarePlan ...
-    setCareLoading(prev => ({ ...prev, [id]: false }));
-  };
-
-  const deletePOC = async id => {
+  const deletePOC = async (id) => {
     await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
-    setResults(r => r.filter(x => x.id !== id));
+    setResults(r => r.filter(d => d.id !== id));
   };
 
-  const exportAsPDF = async id => {
+  const exportAsPDF = async (id) => {
     const el = exportRefs.current[id];
-    if (!el) return;
-    const canvas = await html2canvas(el, { scale: 2 });
+    if (!el) return alert('Nothing to export.');
+    const canvas = await html2canvas(el, { scale:2, useCORS:true });
     const img = canvas.toDataURL('image/png');
-    const pdf = new jsPDF();
-    const w = pdf.internal.pageSize.getWidth();
-    const h = (canvas.height * w) / canvas.width;
-    pdf.addImage(img, 'PNG', 0, 0, w, h);
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const width = pdf.internal.pageSize.getWidth();
+    const height = (canvas.height * width) / canvas.width;
+    let y = 0;
+    pdf.addImage(img, 'PNG', 0, y, width, height);
+    let leftover = height - pdf.internal.pageSize.getHeight();
+    while (leftover > 0) {
+      y = -leftover;
+      pdf.addPage();
+      pdf.addImage(img, 'PNG', 0, y, width, height);
+      leftover -= pdf.internal.pageSize.getHeight();
+    }
     pdf.save(`POC-${id}.pdf`);
   };
-  const extractText = async file => {
+
+  const extractTextFromPDF = async (file) => {
     const reader = new FileReader();
     reader.onload = async () => {
       const arr = new Uint8Array(reader.result);
       const doc = await pdfjsLib.getDocument({ data: arr }).promise;
-      let text = '';
+      let full = '';
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);
-        const content = await page.getTextContent();
-        text += content.items.map(it => it.str).join(' ') + '\n';
+        const tc = await page.getTextContent();
+        full += tc.items.map(i => i.str).join(' ') + '\n';
       }
-      const tags = [...new Set(text.match(/F\d{3}/g) || [])].join(', ');
-      setInputText(text.slice(0, 3000));
-      setFTags(tags);
+      setInputText(full.slice(0, 3000));
+      setFTags([...new Set((full.match(/F\d{3}/g) || []))].join(', '));
     };
     reader.readAsArrayBuffer(file);
   };
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: { 'application/pdf': [] },
-    onDrop: files => files[0] && extractText(files[0]),
+    multiple: false,
+    onDrop: f => f[0] && extractTextFromPDF(f[0]),
   });
+  if (user === undefined) return <div style={{ padding:40 }}>🔄 Checking login...</div>;
 
-  if (user === undefined)
-    return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
-  if (user === null)
+  if (!user) {
     return (
-      <div style={{ padding: 40, maxWidth: 400, margin: 'auto' }}>
+      <div style={{ padding:40, maxWidth:400, margin:'0 auto' }}>
         <h2>Login to SNIFFY</h2>
-        {/* email/password inputs + login button */}
+        <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} style={{ width:'100%', padding:8, marginBottom:10 }} />
+        <input type="password" placeholder="Password" value={pass} onChange={e=>setPass(e.target.value)} style={{ width:'100%', padding:8, marginBottom:10 }} />
+        <button onClick={handleLogin} style={{ width:'100%', padding:10 }}>Login</button>
       </div>
     );
+  }
+
   return (
-    <div style={{ padding: 40, maxWidth: 900, margin: 'auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+    <div style={{ padding:40, maxWidth:900, margin:'0 auto' }}>
+      <div style={{ display:'flex', justifyContent:'space-between' }}>
         <h2>SNIFFY</h2>
-        <button onClick={handleLogout}>Logout</button>
+        <button onClick={() => signOut(auth)}>Logout</button>
       </div>
 
-      {/* PDF DropZone */}
-      <div {...getRootProps()} style={{ border: '2px dashed #0077cc', padding: 40 }}>
+      <h3>📎 Upload CMS‑2567 PDF</h3>
+      <div {...getRootProps()} style={{ border:'2px dashed #0077cc', padding:40, textAlign:'center', background:'#eef7ff', borderRadius:8, marginBottom:20 }}>
         <input {...getInputProps()} />
-        {isDragActive ? <p>Drop PDF...</p> : <p>Click or drag PDF</p>}
+        {isDragActive ? <p><strong>Drop PDF here…</strong></p> : <p>Click or drag your 2567 PDF here</p>}
       </div>
 
-      {/* State & Text Inputs */}
-      {/* Generate POC button */}
-      {/* Saved POCs list: care plan, export, delete buttons */}
+      <h3>📍 Select State (optional)</h3>
+      <select value={selectedState} onChange={e=>setSelectedState(e.target.value)} style={{ width:'100%', padding:10, marginBottom:20 }}>
+        <option value=''>-- None --</option>
+        {Object.keys(StateRegulations).sort().map(s => <option key={s} value={s}>{s}</option>)}
+      </select>
+
+      <textarea rows={5} placeholder="Deficiency text..." value={inputText} onChange={e=>setInputText(e.target.value)} style={{ width:'100%', padding:10 }} />
+      <input placeholder="F‑Tags e.g. F684" value={fTags} onChange={e=>setFTags(e.target.value)} style={{ width:'100%', padding:10, margin:'10px 0' }} />
+      <button onClick={generatePOC} disabled={loading} style={{ padding:10 }}>
+        {loading ? 'Generating…' : 'Generate POC'}
+      </button>
+
+      <hr style={{ margin:'40px 0' }} />
+      <h3>Saved POCs</h3>
+      {results.map(r => (
+        <div key={r.id} style={{ border:'1px solid #ccc', padding:20, borderRadius:8, marginBottom:20 }}>
+          <div ref={el => exportRefs.current[r.id] = el}>
+            <p><strong>F‑Tags:</strong> {r.fTags}</p>
+            <pre>{r.result}</pre>
+            {r.carePlan && <pre>{r.carePlan}</pre>}
+            {r.selectedState && (
+              <div>
+                <p><strong>State regs for {r.selectedState}:</strong></p>
+                {r.fTags.split(',').map(t => {
+                  const reg = StateRegulations[r.selectedState]?.[t.trim()];
+                  return reg && <p key={t}><strong>{t.trim()}:</strong> {reg}</p>;
+                })}
+              </div>
+            )}
+            <small>By: {user.email}</small>
+          </div>
+          {!r.carePlan && (
+            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]}>
+              {carePlanLoading[r.id] ? '...' : 'Generate Care Plan'}
+            </button>
+          )}
+          <br/><br/>
+          <button onClick={() => exportAsPDF(r.id)}>Export PDF</button>
+          <button onClick={() => deletePOC(r.id)} style={{ color:'red', marginLeft:10 }}>Delete</button>
+        </div>
+      ))}
     </div>
   );
 }
+
 export default App;
