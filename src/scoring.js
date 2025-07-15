@@ -1,58 +1,64 @@
 // scoring.js
-// Calculates deficiency and revisit scores per CMS methodology
-// Includes weighted average across three time periods
 
-// Scope-Severity lookup
-const GRID = {
+// CMS Scope-Severity base points (non-substandard quality)
+const basePoints = {
   A: 0, B: 0, C: 0,
-  D: 4, E: 8, F: 16,     // no-harm, > minimal
-  G: 20, H: 35, I: 45,   // actual harm
-  J: 50, K: 100, L: 150  // immediate jeopardy
+  D: 4, E: 8, F: 16,
+  G: 20, H: 35, I: 45,
+  J: 50, K: 100, L: 150,
 };
 
-// Returns points for a single deficiency code letter
-export function deficiencyPoints(letter, isSubstandard = false) {
-  let pts = GRID[letter] || 0;
-  if (isSubstandard) {
-    // Add substandard premium: e.g. F becomes 20 instead of 16, etc.
-    const SUB = { F:4, I:5, L:25 };
-    pts += SUB[letter] || 0;
+// CMS scope-severity chart for reference (optional)
+const severityGrid = {
+  immediateJeopardy: ['J','K','L'],
+  actualHarm: ['G','H','I'],
+  potentialMoreThanMinimal: ['D','E','F'],
+};
+
+/**
+ * Calculate points from a single tag.
+ * @param {string} tag - e.g. 'F684'
+ * @param {string} severity - 'F', 'G', etc.
+ * @param {boolean} substandard - whether tag is under SQC categories (per CMS shading).
+ * @returns {number} points
+ */
+export function scoreTag(severity, substandard = false) {
+  let pts = basePoints[severity] || 0;
+  if (substandard && pts > 0) {
+    pts = Math.ceil(pts * 1.25); // +25% for SQC
   }
   return pts;
 }
 
-// Add revisit points: second (50%), third (70%), fourth+ (85%)
-export function revisitPoints(baseScore, revisitCount) {
-  if (revisitCount <= 1) return 0;
-  if (revisitCount === 2) return baseScore * 0.5;
-  if (revisitCount === 3) return baseScore * 0.7;
-  return baseScore * 0.85;
+/**
+ * Score all deficiencies in a survey cycle.
+ * @param {Array<{tag:string, severity:string, substandard:boolean}>} findings
+ * @returns {number} total points
+ */
+export function scoreCycle(findings) {
+  return findings.reduce((sum, f) => sum + scoreTag(f.severity, f.substandard), 0);
 }
 
-// Weight scores: periods = [most recent, previous, second prior]
-export function weightedScore(periodScores = []) {
-  const weights = [0.5, 0.333333, 0.166667];
-  return periodScores
-    .slice(0,3)
-    .reduce((sum, s, i) => sum + (s * (weights[i] || 0)), 0);
+/**
+ * Calculate weighted score across up to 3 cycles:
+ * Cycle1: 50%, Cycle2: 33.33%, Cycle3: 16.67%
+ * @param {number[]} cycleScores
+ * @returns {number}
+ */
+export function weightedSurveyScore(cycleScores = []) {
+  const weights = [0.5, 0.3333, 0.1667];
+  return cycleScores
+    .slice(0, 3)
+    .reduce((sum, score, idx) => sum + (score * (weights[idx] || 0)), 0);
 }
-import { deficiencyPoints, revisitPoints, weightedScore } from './scoring';
 
-export default async function handler(req, res) {
-  const { deficienciesByPeriod, revisitCounts } = req.body;
-  // Example structure:
-  // deficienciesByPeriod: [{codes:['F','J'], subFlags:[false,true]}, ...]
-  // revisitCounts: [1,2,1]
-
-  const periodScores = deficienciesByPeriod.map((list, idx) => {
-    const sumDef = list.codes.reduce((sum, ltr, i) =>
-      sum + deficiencyPoints(ltr, list.subFlags[i]), 0);
-    const sumRevisit = revisitPoints(sumDef, revisitCounts[idx]);
-    return sumDef + sumRevisit;
-  });
-
-  const totalScore = weightedScore(periodScores);
-  // ... use totalScore in POC logic, GPT prompt context
-  
-  res.status(200).json({ totalScore });
+/**
+ * Compute final facility score including complaint cycles and revisits.
+ * For simplicity: sum weighted survey + complaint + revisitScore.
+ * RevisitScore logic to be handled separately.
+ */
+export function finalFacilityScore({ surveyCycles, complaintCycles = [], revisitScore = 0 }) {
+  const surveyWtd = weightedSurveyScore(surveyCycles);
+  const compWtd = weightedSurveyScore(complaintCycles);
+  return surveyWtd + compWtd + revisitScore;
 }
