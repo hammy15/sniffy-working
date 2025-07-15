@@ -1,68 +1,68 @@
 // scoring.js
-/**
- * CMS Scope & Severity grid scoring (SFF methodology).
- * Sources: CMS SFF weights & substandard definitions 
- */
-
-const weights = {
-  // Format: severity: { scope: { 'I': points, ... } }
-  'J': { isolated: 50, pattern: 100, widespread: 150 },
-  'K': { isolated: 50, pattern: 100, widespread: 150 },
-  'L': { isolated: 50, pattern: 100, widespread: 150 },
-  'G': { isolated: 10, pattern: 20, widespread: 30 },
-  'H': { isolated: 10, pattern: 20, widespread: 30 },
-  'I': { isolated: 10, pattern: 20, widespread: 30 },
-  'D': { isolated: 2, pattern: 4, widespread: 6 },
-  'E': { isolated: 2, pattern: 4, widespread: 6 },
-  'F': { isolated: 2, pattern: 4, widespread: 6 },
-  'A': { isolated: 0, pattern: 0, widespread: 0 },
-  'B': { isolated: 0, pattern: 0, widespread: 0 },
-  'C': { isolated: 0, pattern: 0, widespread: 0 },
-};
 
 /**
- * Tags considered SQC (substandard quality of care) if severity is in F‑L and part of specific groups.
- * Based on 42 CFR 483.13, .15, .25 regulations 
+ * Scope maps
+ * A/B/C = 1, D/E/F = 2, G/H/I = 3, J/K/L = 4
  */
-const SQC_TAGS = new Set([
-  /* Example tags: F550, F675–680, F684–700, etc. Fill as researched */
-  'F550', 'F675', 'F676', 'F677', 'F678', 'F679', 'F680',
-  'F684', 'F685', 'F686', 'F687', 'F688', 'F689', 'F690', /*...*/
-]);
+const scopeMap = { A: 1, B: 1, C: 1, D: 2, E: 2, F: 2, G: 3, H: 3, I: 3, J: 4, K: 4, L: 4 };
 
 /**
- * Compute points for a deficiency.
- * @param {string} severity - One of A–L.
- * @param {'isolated'|'pattern'|'widespread'} scope
- * @param {string} fTag - Full tag e.g. 'F689'
+ * Severity point base values (non-SQC)
+ * + SQC bonus applied for shaded cells (CMS grid)
  */
-function scoreDeficiency(severity, scope, fTag) {
-  const base = weights[severity]?.[scope] ?? 0;
-  // Apply SQC bump: F, H, I severity for SQC_TAGS get increased weights (e.g. F:6→10, H/I etc.) 
-  if (SQC_TAGS.has(fTag) && ['F', 'G', 'H', 'I', 'J', 'K', 'L'].includes(severity)) {
-    // simplified: bump base by 4 for F–I per parenthesis in CMS doc
-    if (['D','E','F'].includes(severity)) return base + 4;
-    if (['G','H','I'].includes(severity)) return base + 5;
-    if (['J','K','L'].includes(severity)) return base + 25; // using parentheses values
+const severityBase = { A:0, B:0, C:0, D:4, E:8, F:16, G:20, H:35, I:45, J:50, K:100, L:150 };
+
+// SQC: Applies extra points when F/H/I/J/K/L fall under SQC tags
+const SQC_EXTRA = { F:4, H:5, I:5, J:25, K:25, L:25 };
+
+/**
+ * F-tags considered SQC under CMS
+ * Includes ranges: F221-F226, F240-F258, F309-F334 etc.
+ * For brevity, simplified array
+ */
+const sqcTags = [
+  ...range(221, 226),
+  ...range(240, 258),
+  ...range(309, 334),
+  684, 685, 699 // Quality-of-care SQC examples :contentReference[oaicite:1]{index=1}
+].map(n => `F${n}`);
+
+// Utility to generate numeric range
+function range(a, b) {
+  const out = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
+
+/**
+ * Calculates deficiency point for a single tag entry
+ * @param {string} tag - e.g. 'F684'
+ * @param {string} scopeSeverity - one-letter A-L
+ */
+export function calcDeficiencyPoints(tag, scopeSeverity) {
+  const ss = scopeSeverity.toUpperCase();
+  const base = severityBase[ss];
+  if (base == null) throw new Error(`Invalid severity code: ${ss}`);
+  let total = base;
+
+  // Add SQC bonus if applicable
+  if (['F','H','I','J','K','L'].includes(ss) && sqcTags.includes(tag)) {
+    total += SQC_EXTRA[ss] || 0;
   }
-  return base;
+  return total;
 }
 
 /**
- * Score an array of deficiency objects.
- * @param {Array<{fTag:string, severity: string, scope: string}>} defs
- * @returns {object}
+ * Calculates revisit penalty points
+ * @param {number} revisitCount - 0–4
  */
-export function scoreSurvey(defs) {
-  let total = 0;
-  let sqcFlag = false;
-  const breakdown = defs.map(d => {
-    const pts = scoreDeficiency(d.severity, d.scope, d.fTag);
-    total += pts;
-    if (SQC_TAGS.has(d.fTag) && ['F','G','H','I','J','K','L'].includes(d.severity)) {
-      sqcFlag = true;
-    }
-    return { ...d, points: pts };
-  });
-  return { totalPoints: total, substandardQualityOfCare: sqcFlag, items: breakdown };
+export function calcRevisitPenalty(points, revisitCount) {
+  if (revisitCount <= 1) return 0;
+  const penalties = [0, 0, 0.5, 0.7, 0.85];
+  return Math.ceil(points * penalties[revisitCount] - points);
 }
+
+/**
+ * Weighting survey cycles: latest, previous, older
+ */
+export const cycleWeight = [0.5, 1/3, 1/6];
