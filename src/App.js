@@ -1,4 +1,85 @@
-// src/App.js – SNIFFY Main Component
+// src/scoring.js
+export const SCOPE_LABELS = ['Isolated', 'Pattern', 'Widespread'];
+export const SEVERITY_LABELS = ['A–C', 'D–F', 'G–I', 'J–L'];
+
+export const SCORE_MAP = {
+  D: [4, 8, 16],
+  E: [8, 16, 32],
+  F: [16, 32, 48],
+  G: [20, 35, 45],
+  H: [35, 50, 65],
+  I: [45, 60, 80],
+  J: [50, 75, 100],
+  K: [100, 125, 150],
+  L: [150, 175, 200],
+};
+
+/**
+ * Parses tags like "F684D" → { tag: "F684", severity: "D" }
+ */
+export function parseTagSeverity(rawTag) {
+  const match = rawTag.match(/(F\d{3})([A-L])/);
+  if (!match) return null;
+  return { tag: match[1], severity: match[2] };
+}
+
+/**
+ * Given severity and scope index, returns point value
+ */
+export function computePoints(severity, scopeIndex) {
+  const arr = SCORE_MAP[severity];
+  return arr ? arr[scopeIndex] : 0;
+}
+// pages/api/generatePOC.js
+import { parseTagSeverity, computePoints, SCOPE_LABELS } from '../../src/scoring';
+import { Configuration, OpenAIApi } from 'openai';
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+export default async function handler(req, res) {
+  const { fullText, tags = [], selectedState } = req.body;
+  if (!OPENAI_API_KEY) return res.status(500).json({ error: 'Missing API key' });
+
+  const openai = new OpenAIApi(new Configuration({ apiKey: OPENAI_API_KEY }));
+  const analysis = [];
+
+  tags.forEach(tagRaw => {
+    const ps = parseTagSeverity(tagRaw);
+    if (!ps) return;
+
+    const scopeIndex = 1; // Simplified default = Pattern
+    const pts = computePoints(ps.severity, scopeIndex);
+    analysis.push({
+      tag: ps.tag,
+      severity: ps.severity,
+      scope: SCOPE_LABELS[scopeIndex],
+      points: pts,
+      recommendation: `Provide correction for ${ps.tag} severity ${ps.severity}`
+    });
+  });
+
+  const totalPoints = analysis.reduce((s, a) => s + a.points, 0);
+  analysis.sort((a, b) => a.tag.localeCompare(b.tag));
+
+  // Call GPT to generate unified POC text
+  const aiResponse = await openai.createChatCompletion({
+    model: 'gpt-4',
+    messages: [
+      { role: 'system', content: 'Craft a professional POC covering each tag.' },
+      { role: 'user', content: `
+Tags: ${analysis.map(a => a.tag).join(', ')}
+Recommendations:
+${analysis.map(a => `${a.tag}: ${a.recommendation}`).join('\n')}
+State: ${selectedState}
+` }
+    ],
+    max_tokens: 800,
+  });
+
+  const poctext = aiResponse.data.choices[0].message.content;
+  res.status(200).json({ analysis, totalPoints, poctext });
+}
+// src/App.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import html2canvas from 'html2canvas';
@@ -8,20 +89,20 @@ import { auth, db } from './firebase';
 import {
   signInWithEmailAndPassword,
   signOut,
-  onAuthStateChanged,
+  onAuthStateChanged
 } from 'firebase/auth';
 import {
   collection,
   addDoc,
   getDocs,
-  updateDoc,
-  deleteDoc,
   doc,
-  getDoc,
+  getDoc
 } from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
+import { parseTagSeverity } from './scoring';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+
 function App() {
   const [user, setUser] = useState(undefined);
   const [userData, setUserData] = useState(null);
@@ -30,18 +111,20 @@ function App() {
   const [inputText, setInputText] = useState('');
   const [fTags, setFTags] = useState('');
   const [results, setResults] = useState([]);
+  const [analysis, setAnalysis] = useState([]);
+  const [totalPoints, setTotalPoints] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [carePlanLoading, setCarePlanLoading] = useState({});
   const [selectedState, setSelectedState] = useState('');
   const exportRefs = useRef({});
-
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
+    const unsub = onAuthStateChanged(auth, async u => {
       if (u) {
         setUser(u);
-        await fetchPOCs(u.uid);
-        const uDoc = await getDoc(doc(db, 'users', u.uid));
-        setUserData(uDoc.exists() ? uDoc.data() : { pro: false });
+        const snapshot = await getDocs(collection(db, 'users', u.uid, 'pocs'));
+        setResults(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+
+        const ud = await getDoc(doc(db, 'users', u.uid));
+        setUserData(ud.exists() ? ud.data() : { pro: false });
       } else {
         setUser(null);
         setUserData(null);
@@ -49,66 +132,62 @@ function App() {
     });
     return unsub;
   }, []);
-  const fetchPOCs = async (uid) => {
-    const snap = await getDocs(collection(db, 'users', uid, 'pocs'));
-    setResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  };
 
   const handleLogin = async () => {
-    try { await signInWithEmailAndPassword(auth, email, pass); }
-    catch (e) { alert('Login failed: ' + e.message); }
+    try { await signInWithEmailAndPassword(auth, email, pass); } 
+    catch (e) { alert(e.message); }
   };
 
   const handleLogout = () => signOut(auth);
+  const extractPDF = async file => {
+    const fr = new FileReader();
+    fr.onload = async () => {
+      const arr = new Uint8Array(fr.result);
+      const pdf = await pdfjsLib.getDocument({ data: arr }).promise;
+      let text = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const pg = await pdf.getPage(i);
+        const tc = await pg.getTextContent();
+        text += tc.items.map(x => x.str).join(' ') + '\n';
+      }
+      setInputText(text);
+      const tags = Array.from(new Set(text.match(/F\d{3}[A-L]/g) || []));
+      setFTags(tags.join(', '));
+    };
+    fr.readAsArrayBuffer(file);
+  };
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: 'application/pdf',
+    multiple: false,
+    onDrop: files => extractPDF(files[0])
+  });
   const generatePOC = async () => {
     setLoading(true);
+    const tags = fTags.split(',').map(t => t.trim()).filter(Boolean);
     try {
       const res = await fetch('/api/generatePOC', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f=>f.trim()), selectedState }),
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ fullText: inputText, tags, selectedState })
       });
-      const data = await res.json();
-      if (!data?.result) throw new Error('No result');
-      const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
-        inputText, fTags, result: data.result, selectedState, timestamp: new Date(),
+      const jd = await res.json();
+      if (jd.error) throw new Error(jd.error);
+
+      const ref = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
+        inputText, fTags, selectedState,
+        analysis: jd.analysis, totalPoints: jd.totalPoints,
+        poctext: jd.poctext, timestamp: new Date()
       });
-      setResults([{ id: docRef.id, inputText, fTags, result: data.result, selectedState }, ...results]);
-      setInputText(''); setFTags('');
-    } catch (err) {
-      alert('Error generating POC: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
+      setResults([{ id: ref.id, inputText, fTags, selectedState, ...jd }, ...results]);
+      
+      setAnalysis(jd.analysis);
+      setTotalPoints(jd.totalPoints);
+    } catch (e) { alert(e.message); }
+    setLoading(false);
   };
-
-  const generateCarePlan = async (pocId, pocText) => {
-    setCarePlanLoading(prev => ({ ...prev, [pocId]: true }));
-    try {
-      const res = await fetch('/api/generateCarePlan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pocText }),
-      });
-      const data = await res.json();
-      if (!data?.carePlan) throw new Error('No care plan');
-      await updateDoc(doc(db, 'users', user.uid, 'pocs', pocId), { carePlan: data.carePlan });
-      setResults(results.map(r => r.id === pocId ? { ...r, carePlan: data.carePlan } : r));
-    } catch (err) {
-      alert('Error generating care plan: ' + err.message);
-    } finally {
-      setCarePlanLoading(prev => ({ ...prev, [pocId]: false }));
-    }
-  };
-
-  const deletePOC = async (id) => {
-    await deleteDoc(doc(db, 'users', user.uid, 'pocs', id));
-    setResults(results.filter(r => r.id !== id));
-  };
-
-  const exportAsPDF = async (id) => {
-    const el = exportRefs.current[id];
-    if (!el) return;
+  const exportAsPDF = async () => {
+    const el = exportRefs.current['output'];
     const canvas = await html2canvas(el, { scale: 2, useCORS: true });
     const img = canvas.toDataURL('image/png');
     const pdf = new jsPDF('p', 'mm', 'a4');
@@ -118,96 +197,69 @@ function App() {
     pdf.addImage(img, 'PNG', 0, y, w, h);
     let left = h - pdf.internal.pageSize.getHeight();
     while (left > 0) {
-      y = -left;
       pdf.addPage();
-      pdf.addImage(img, 'PNG', 0, y, w, h);
+      pdf.addImage(img, 'PNG', 0, -left, w, h);
       left -= pdf.internal.pageSize.getHeight();
     }
-    pdf.save(`POC-${id}.pdf`);
+    pdf.save('POC_full.pdf');
   };
-  const extractTextFromPDF = async (file) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const arr = new Uint8Array(reader.result);
-      const pdfDoc = await pdfjsLib.getDocument({ data: arr }).promise;
-      let full = '';
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const text = await page.getTextContent();
-        full += text.items.map(t => t.str).join(' ') + '\n';
-      }
-      const tags = [...new Set(full.match(/F\d{3}/g) || [])].join(', ');
-      setInputText(full.trim().slice(0, 3000));
-      setFTags(tags);
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: { 'application/pdf': [] },
-    multiple: false,
-    onDrop: files => files[0] && extractTextFromPDF(files[0]),
-  });
-  if (user === undefined) {
-    return <div style={{ padding: 40 }}>🔄 Checking login...</div>;
-  }
-  if (user === null) {
-    return (
-      <div style={{ padding: 40, maxWidth: 400, margin: '0 auto' }}>
-        <h2>Login to <span style={{ color: '#0077cc' }}>SNIFFY</span> 🧠</h2>
-        <input placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ width:'100%', padding:8, marginBottom:10 }} />
-        <input type="password" placeholder="Password" value={pass} onChange={e => setPass(e.target.value)} style={{ width:'100%', padding:8, marginBottom:10 }} />
-        <button onClick={handleLogin} style={{ width:'100%', padding:10 }}>Login</button>
-      </div>
-    );
-  }
+  if (user === undefined) return <div>🔄 Checking login…</div>;
+  if (!user) return (
+    <LoginForm 
+      email={email} pass={pass}
+      onLogin={handleLogin}
+      setEmail={setEmail} setPass={setPass}
+    />
+  );
 
   return (
     <div style={{ padding:40, maxWidth:900, margin:'0 auto' }}>
-      <div style={{ display:'flex', justifyContent:'space-between' }}>
-        <h2>SNIFFY 🧠</h2>
+      <div style={{display:'flex', justifyContent:'space-between'}}>
+        <h2>SNIFFY</h2>
         <button onClick={handleLogout}>Logout</button>
       </div>
 
-      <h3>📎 Upload CMS‑2567 PDF</h3>
-      <div {...getRootProps()} style={{ border:'2px dashed #0077cc', padding:40, textAlign:'center', background:'#eef7ff', marginBottom:20, borderRadius:8 }}>
+      <div {...getRootProps()} style={dropzoneStyle}>
         <input {...getInputProps()} />
-        {isDragActive
-          ? <p><strong>Drop PDF here...</strong></p>
-          : <p>Click or drag your <strong>2567 PDF</strong> here to extract deficiency tags.</p>}
+        {isDragActive 
+          ? <p>Drop your 2567 PDF here</p> 
+          : <p>Click or drag PDF</p>}
       </div>
 
-      <h3>📍 Select Your State</h3>
-      <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width:'100%', padding:10, marginBottom:20 }}>
-        <option value="">-- Select a State (Optional) --</option>
-        {Object.keys(StateRegulations).sort().map(st => <option key={st} value={st}>{st}</option>)}
+      <select value={selectedState} onChange={e => setSelectedState(e.target.value)} style={{ width:'100%', padding:10 }}>
+        <option value=''>-- Select State --</option>
+        {Object.keys(StateRegulations).sort().map(st => (
+          <option key={st} value={st}>{st}</option>
+        ))}
       </select>
 
-      <textarea rows="5" style={{ width:'100%', padding:10 }} placeholder="Paste deficiency text here..." value={inputText} onChange={e => setInputText(e.target.value)} />
-      <input placeholder="F‑Tags (e.g. F684, F689)" value={fTags} onChange={e => setFTags(e.target.value)} style={{ width:'100%', padding:10, margin:'10px 0' }} />
-
+      <textarea rows={5} value={inputText} onChange={e => setInputText(e.target.value)} style={{width:'100%', padding:10}} />
+      <input value={fTags} onChange={e => setFTags(e.target.value)} placeholder="F‑Tags" style={{width:'100%', padding:10, margin:'10px 0'}} />
       <button onClick={generatePOC} disabled={loading} style={{ padding:10 }}>
-        {loading ? 'Generating...' : '🧠 Generate POC'}
+        {loading ? 'Generating…' : 'Generate POC'}
       </button>
 
-      <hr style={{ margin:'40px 0' }} />
-      <h3>📂 Saved POCs</h3>
-      {results.map(r => (
-        <div key={r.id} style={{ border:'1px solid #ccc', padding:20, borderRadius:8, marginBottom:20 }}>
-          <div ref={el => (exportRefs.current[r.id] = el)}>
-            {/* Render F‑Tags, Deficiency, POC, Care Plan, State Regs */}
-          </div>
-
-          {!r.carePlan && (
-            <button onClick={() => generateCarePlan(r.id, r.result)} disabled={carePlanLoading[r.id]} style={{ marginTop:10 }}>
-              {carePlanLoading[r.id] ? 'Generating...' : '🧠 Generate Care Plan'}
-            </button>
-          )}
-          <br /><br />
-          <button onClick={() => exportAsPDF(r.id)}>📄 Export PDF</button>
-          <button onClick={() => deletePOC(r.id)} style={{ marginLeft:10, color:'red' }}>Delete</button>
+      {analysis.length > 0 && (
+        <div ref={el => exportRefs.current['output'] = el} style={{ marginTop:40 }}>
+          <h3>POC Recommendations</h3>
+          <table style={tableStyle}>
+            <thead><tr><th>Tag</th><th>Scope</th><th>Severity</th><th>Points</th><th>Recommendation</th></tr></thead>
+            <tbody>
+              {analysis.map(a => (
+                <tr key={a.tag}>
+                  <td>{a.tag}</td>
+                  <td>{a.scope}</td>
+                  <td>{a.severity}</td>
+                  <td>{a.points}</td>
+                  <td>{a.recommendation}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p>Total Score: <strong>{totalPoints}</strong></p>
+          <button onClick={exportAsPDF} style={{ padding:10 }}>Download POC PDF</button>
         </div>
-      ))}
+      )}
     </div>
   );
 }
