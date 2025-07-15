@@ -4,41 +4,31 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import * as pdfjsLib from 'pdfjs-dist';
 import { auth, db } from './firebase';
-import {
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged
-} from 'firebase/auth';
-import {
-  collection, addDoc, getDocs,
-  updateDoc, deleteDoc, doc, getDoc
-} from 'firebase/firestore';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, getDoc } from 'firebase/firestore';
 import StateRegulations from './StateRegulations';
-import { calculatePoints, pointsGrid, severityScopeGrid } from './scoring';
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 function App() {
   const [user, setUser] = useState(undefined);
   const [userData, setUserData] = useState(null);
-  const [email, setEmail] = useState(''), [pass, setPass] = useState('');
-  const [inputText, setInputText] = useState(''), [fTags, setFTags] = useState('');
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [inputText, setInputText] = useState('');
+  const [fTags, setFTags] = useState('');
   const [selectedState, setSelectedState] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [carePlanLoading, setCarePlanLoading] = useState({});
   const exportRefs = useRef({});
-  
-  // Auth and user load
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async u => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser(u);
-        // load pro status
-        const docSnap = await getDoc(doc(db, 'users', u.uid));
-        setUserData(docSnap.exists() ? docSnap.data() : { pro: false });
-        // load saved POCs
-        const snap = await getDocs(collection(db, 'users', u.uid, 'pocs'));
-        setResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const snap = await getDoc(doc(db, 'users', u.uid));
+        setUserData(snap.exists() ? snap.data() : { pro: false });
+        const pocSnap = await getDocs(collection(db, 'users', u.uid, 'pocs'));
+        setResults(pocSnap.docs.map(d => ({ id: d.id, ...d.data() })));
       } else {
         setUser(null);
         setUserData(null);
@@ -46,110 +36,95 @@ function App() {
     });
     return unsub;
   }, []);
-  if (user === undefined) return <div>🔄 Checking login...</div>;
-  if (user === null) return (
-    <div> {/* login form... */} </div>
-  );
+  const handleLogin = async () => {
+    try { await signInWithEmailAndPassword(auth, email, pass); }
+    catch (err) { alert('Login failed: ' + err.message); }
+  };
+  const handleLogout = () => signOut(auth);
+  const extractTextFromPDF = async (file) => { /* same as before */ };
+  const exportAsPDF = async (id) => { /* same as before */ };
 
   const generatePOC = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/generatePOC', {
         method: 'POST',
-        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f => f.trim()), selectedState })
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f=>f.trim()), selectedState })
       });
       const { result } = await res.json();
-      if (!result) throw new Error('No result from GPT');
-      const docRef = await addDoc(collection(db, 'users', user.uid, 'pocs'), {
-        inputText, fTags, result, selectedState, timestamp: new Date()
-      });
-      setResults([{ id: docRef.id, inputText, fTags, result, selectedState }, ...results]);
+      if (!result) return alert('No result from GPT');
+      const ref = await addDoc(collection(db, 'users', user.uid, 'pocs'),
+        { inputText, fTags, result, selectedState, timestamp: new Date() });
+      setResults([{ id: ref.id, inputText, fTags, result, selectedState }, ...results]);
       setInputText(''); setFTags('');
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { alert(e.message); }
+    setLoading(false);
   };
 
-  // Care Plan, delete, PDF and extract functions here (same as before)...
+  const generateCarePlan = async (id, text) => { /* same*/ };
+  const deletePOC = async (id) => { /* same*/ };
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: { 'application/pdf': [] },
+    onDrop: files => files[0] && extractTextFromPDF(files[0]),
+  });
+  if (user === undefined) return <div style={{padding:40}}>🔄 Checking login...</div>;
+  if (user === null) return (
+    <div style={{padding:40,maxWidth:400,margin:'0 auto'}}>
+      <h2>Login to SNIFFY 🧠</h2>
+      <input placeholder="Email" value={email} onChange={e=>setEmail(e.target.value)} />
+      <input type="password" placeholder="Password" value={pass} onChange={e=>setPass(e.target.value)} />
+      <button onClick={handleLogin}>Login</button>
+    </div>
+  );
 
   return (
-    <div>
-      <div>Header + logout</div>
-      {/* PDF Upload, state select, input and generate button... */}
-      <button onClick={generatePOC} disabled={loading || !userData?.pro}>
-        {loading ? 'Generating...' : 'Generate POC'}
-      </button>
+    <div style={{padding:40,maxWidth:900,margin:'0 auto'}}>
+      <header style={{display:'flex',justifyContent:'space-between'}}>
+        <h2>SNIFFY 🧠</h2><button onClick={handleLogout}>Logout</button>
+      </header>
 
-      <hr />
-      <h3>Saved POCs</h3>
-      {results.map(r => {
-        // compute scoring
-        const tagArray = r.fTags.split(',').map(t => t.trim());
-        const scored = tagArray.map(tag => calculatePoints(tag, /* example scope='D', severity='F' */));
-        const totalPoints = scored.reduce((a,c)=>a+c.points,0);
-        return (
-          <div key={r.id}>
+      <section>
+        <h3>📎 Upload CMS‑2567 PDF</h3>
+        <div {...getRootProps()} style={{border:'2px dashed #0077cc',padding:40,textAlign:'center',background:'#eef7ff',marginBottom:20,borderRadius:8}}>
+          <input {...getInputProps()} />
+          {isDragActive ? <p><strong>Drop PDF here...</strong></p> : <p>Drag or click to upload your CMS‑2567 PDF</p>}
+        </div>
+
+        <h3>📍 Select State (optional)</h3>
+        <select value={selectedState} onChange={e => setSelectedState(e.target.value)}>
+          <option value="">-- None --</option>
+          {Object.keys(StateRegulations).sort().map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+
+        <textarea rows="5" placeholder="Or paste deficiency text..." value={inputText} onChange={e=>setInputText(e.target.value)} />
+        <input placeholder="F‑Tags (e.g. F684, F689)" value={fTags} onChange={e=>setFTags(e.target.value)} />
+        <button onClick={generatePOC} disabled={loading}>{loading ? '…Generating' : '🧠 Generate POC'}</button>
+      </section>
+
+      <section>
+        <hr />
+        <h3>📂 Saved POCs</h3>
+        {results.map(r => (
+          <div key={r.id} style={{border:'1px solid #ccc',padding:20,marginBottom:20,borderRadius:8}}>
             <div ref={el=>exportRefs.current[r.id]=el}>
-              <h4>Tag-wise POC:</h4>
-              {tagArray.map((tag,i)=>(
-                <div key={tag}>
-                  <b>{tag}</b>: {r.result[tag]} { /* assumes result is object mapping */ }
-                  – points: {scored[i].points}
-                </div>
-              ))}
-              <div>Total Points: {totalPoints}</div>
-              <h4>Severity/Scope Grid:</h4>
-              <pre>{severityScopeGrid()}</pre>
-              <h4>State Regs:</h4>
-              {r.selectedState && tagArray.map(tag => (
-                StateRegulations[r.selectedState]?.[tag] &&
-                  <div key={tag}><b>{tag}</b>: {StateRegulations[r.selectedState][tag]}</div>
-              ))}
+              <p><strong>F‑Tags:</strong> {r.fTags}</p>
+              <pre><strong>Deficiency:</strong><br />{r.inputText}</pre>
+              <pre><strong>POC:</strong><br />{r.result}</pre>
+              {r.carePlan && <pre><strong>Care Plan:</strong><br />{r.carePlan}</pre>}
+              {r.selectedState && <div><strong>State Regs:</strong>{r.fTags.split(',').map(tag=>{
+                const clean=tag.trim(), reg=StateRegulations[r.selectedState][clean];
+                return reg ? <p key={clean}><strong>{clean}:</strong> {reg}</p> : null;
+              })}</div>}
             </div>
-            {/* buttons: care plan, export PDF, delete */}
+            {!r.carePlan && <button onClick={()=>generateCarePlan(r.id,r.result)} disabled={carePlanLoading[r.id]}>{carePlanLoading[r.id]?'…':'🧠 Care Plan'}</button>}
+            <br/><button onClick={()=>exportAsPDF(r.id)}>📄 Export PDF</button>
+            <button onClick={()=>deletePOC(r.id)} style={{color:'red'}}>Delete</button>
           </div>
-        );
-      })}
+        ))}
+      </section>
     </div>
   );
 }
+
 export default App;
-// CMS scope/severity to points grid from CMS SFF methodology 
-export const pointsGrid = {
-  A:0,B:0,C:0,
-  D:2,E:4,F:6,   // non‑SQC
-  G:10,H:20,I:30,
-  J:50,K:100,L:150
-};
-
-// For SQC tags (substandard quality care), F→10, H→25, K→125 
-const sqcTags = new Set([
-  /* list F‑tags under CFR 483.13, .15, .25 e.g. 'F550','F684' etc from turn0search5 */ 
-]);
-
-export function calculatePoints(tag, { scope='F', severity='F' }) {
-  const key = severity;
-  let pts = pointsGrid[key] || 0;
-  if (key === 'F' && sqcTags.has(tag)) pts = 10;
-  return { tag, points: pts };
-}
-
-export function severityScopeGrid() {
-  return `
-        | Isolated | Pattern | Widespread
---------|----------|---------|-----------
-J/K/L   | IJ to resident → high pts
-G/H/I   | Actual harm
-D/E/F   | Pot’l > minimal
-A/B/C   | Min harm
-  `;
-}
-import openai from 'openai';
-export default async function handler(req, res) {
-  const { inputText, fTags, selectedState } = req.body;
-  const prompt = `Generate a professional POC. Include: each F‑tag separately; scope/severity; state regs ${selectedState}. Data: ${inputText}. Tags: ${fTags.join(',')}.`;
-  const completion = await openai.chat.completions.create({ model:'gpt-4', ... });
-  res.status(200).json({ result: completion.choices[0].message.content });
-}
