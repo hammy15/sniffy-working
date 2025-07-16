@@ -1,14 +1,15 @@
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  try {
+    const { inputText, fTags, selectedState } = req.body;
+    // your existing GPT logic here...
+    const result = await someGPTFunction({ inputText, fTags, selectedState });
 
-  const { pocText } = req.body;
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ error: 'Missing OpenAI API key' });
+    return res.status(200).json({ result });
+  } catch (err) {
+    console.error('generatePOC error:', err);
+    return res.status(500).json({ error: err.message });
   }
+}
 
   const prompt = `
 You are a care plan nurse in a skilled nursing facility.
