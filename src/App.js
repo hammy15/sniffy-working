@@ -80,25 +80,26 @@ function App() {
 
   // POC generation
   const generatePOC = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/generatePOC', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f=>f.trim()), selectedState })
-      });
-      const data = await res.json();
-      if (data.result) {
-        const ref = await addDoc(collection(db, 'users', user.uid, 'pocs'), { inputText, fTags, result: data.result, selectedState, timestamp: new Date() });
-        setResults([{ id: ref.id, inputText, fTags, result: data.result, selectedState }, ...results]);
-        setInputText(''); setFTags('');
-      } else alert('No result from GPT');
-    } catch (err) {
-      alert('Error generating POC: ' + err.message);
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const res = await fetch('/api/generatePOC', {/* ... */});
+    const text = await res.text();
+    console.log('📥 Server responded with:', text);
+
+    const data = JSON.parse(text); // handle unexpected formats
+    if (data.result) {
+      // process result…
+    } else {
+      alert('No result from GPT');
+      console.error('Payload:', data);
     }
-  };
+  } catch (err) {
+    alert('Error generating POC: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // Care plan generator
   const generateCarePlan = async (id, text) => {
