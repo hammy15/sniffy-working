@@ -58,27 +58,28 @@ function App() {
     }
   };
 
-  const handleLogout = () => signOut(auth);
-  // Extract text from uploaded PDF (all pages)
   const extractTextFromPDF = async (file) => {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const pdfDoc = await pdfjsLib.getDocument({ data: arr }).promise;
-console.log('📄 PDF has', pdfDoc.numPages, 'pages');
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const arr = new Uint8Array(reader.result);
+    const pdfDoc = await pdfjsLib.getDocument({ data: arr }).promise;
 
-for (let i = 1; i <= pdfDoc.numPages; i++) {
-  const page = await pdfDoc.getPage(i);
-  const text = await page.getTextContent();
-  console.log(`Page ${i} has ${text.items.length} text items`);
-  // existing logic to build full string
-}
+    console.log('🔍 Number of pages:', pdfDoc.numPages);
+    let full = '';
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const text = await page.getTextContent();
+      console.log(`Page ${i} text items count:`, text.items.length);
+      full += text.items.map(item => item.str).join(' ') + '\n';
+    }
 
-      const tags = [...new Set((full.match(/F\d{3}/g) || []))].join(', ');
-      setInputText(full.trim().slice(0, 3000));
-      setFTags(tags);
-    };
-    reader.readAsArrayBuffer(file);
+    const tags = [...new Set((full.match(/F\d{3}/g) || []))].join(', ');
+    setInputText(full.trim().slice(0, 3000));
+    setFTags(tags);
   };
+  reader.readAsArrayBuffer(file);
+};
+
 
   // POC generation
   const generatePOC = async () => {
