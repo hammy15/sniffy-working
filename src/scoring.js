@@ -1,81 +1,67 @@
 // scoring.js
 
 /**
- * Scope‑Severity to base points per CMS Five‑Star / SFF methodology :contentReference[oaicite:1]{index=1}
+ * Points lookup for Scope–Severity codes per CMS SFF methodology.
+ * Normal values and SQC (higher) in parentheses.
+ * Based on CMS Table 1: scope/severity grid :contentReference[oaicite:6]{index=6}
  */
-const SCOPE_SEVERITY_POINTS = {
-  A: 0, B: 0, C: 0,
-  D: 4, E: 8, F: 16,
-  G: 20, H: 35, I: 45,
-  J: 50, K: 100, L: 150
-};
-
-// Additional substandard quality-of-care (SQC) points (optional)
-const SQC_EXTRA = {
-  E: 0, F: 4,
-  G: 0, H: 5, I: 5,
-  J: 25, K: 25, L: 25
+const POINTS = {
+  A: { normal: 0, sqc: 0 },
+  B: { normal: 0, sqc: 0 },
+  C: { normal: 0, sqc: 0 },
+  D: { normal: 2, sqc: 2 },
+  E: { normal: 4, sqc: 4 },
+  F: { normal: 6, sqc: 10 },     // SQC increases points :contentReference[oaicite:7]{index=7}
+  G: { normal: 10, sqc: 10 },
+  H: { normal: 20, sqc: 25 },    // plus SQC :contentReference[oaicite:8]{index=8}
+  I: { normal: 30, sqc: 35 },
+  J: { normal: 50, sqc: 75 },
+  K: { normal: 100, sqc: 125 },
+  L: { normal: 150, sqc: 175 },
 };
 
 /**
- * Revisit penalty percentages :contentReference[oaicite:2]{index=2}
+ * Retrieve points for a single deficiency code.
+ * @param {string} code - Single letter A–L scope/severity.
+ * @param {boolean} isSQC - True if deficiency is Substandard Quality of Care.
+ * @returns {number}
  */
-const REVISIT_MULTIPLIERS = {
+export function getDeficiencyPoints(code, isSQC = false) {
+  const entry = POINTS[code];
+  if (!entry) {
+    console.warn(`Unknown code '${code}' in scoring`);
+    return 0;
+  }
+  return isSQC ? entry.sqc : entry.normal;
+}
+
+/**
+ * Applies CMS revisit penalties: additional survey revisits add points.
+ * Referencing CMS Table 2: revisit multipliers :contentReference[oaicite:9]{index=9}
+ */
+const REVISIT_MULTIPLIER = {
+  0: 0,
   1: 0,
   2: 0.5,
   3: 0.7,
-  4: 0.85
-};
-
-// Example state cut points (these must be updated from CMS tables)  
-// Format: state code => { stars: [upper5, upper4, upper3, upper2, upper1] }
-const STATE_CUTPOINTS = {
-  // e.g., 'WA': [3.2, 6.5, 10.1, 14.8, Infinity],
-  // You need to populate this from CMS 2025 cut-point tables :contentReference[oaicite:3]{index=3}
+  4: 0.85,
 };
 
 /**
- * Calculates total deficiency points for a set of findings
- * Each finding: { tag: 'F684', scope: 'A'...'L', severity: 'A'...'L' }
+ * Calculate total deficiency score.
+ * @param {Array<{code: string, isSQC: boolean}>} deficiencies
+ * @param {number} revisitCount - number of revisits (0–4).
+ * @returns {number} total points
  */
-export function calculateDeficiencyScore(findings = []) {
-  let total = 0;
-  for (const f of findings) {
-    const key = f.severity;
-    const pts = SCOPE_SEVERITY_POINTS[key] || 0;
-    const extra = SQC_EXTRA[key] || 0;
-    total += pts + extra;
-  }
-  return total;
-}
+export function calculateTotalScore(deficiencies, revisitCount = 0) {
+  const basePoints = deficiencies.reduce(
+    (sum, { code, isSQC }) => sum + getDeficiencyPoints(code, isSQC),
+    0
+  );
 
-/**
- * Applies revisit penalties to a base cycle score
- */
-export function applyRevisitPenalty(cycleScore, revisitCount = 1) {
-  const multiplier = REVISIT_MULTIPLIERS[revisitCount] ?? 0;
-  return cycleScore * (1 + multiplier);
-}
+  // Cap revisit multiplier lookup
+  const revisitIndex = Math.min(Math.max(revisitCount, 0), 4);
+  const extra = basePoints * (REVISIT_MULTIPLIER[revisitIndex] || 0);
 
-/**
- * Computes weighted score across 3 survey cycles
- * cyclingScores: [mostRecent, prev, earliest]
- */
-export function weightedSurveyScore(cycleScores = [0,0,0]) {
-  const weights = [0.5, 1/3, 1/6];
-  return cycleScores.reduce((sum, score, i) => sum + (score * weights[i]), 0);
-}
-
-/**
- * Determines star rating given survey score and state
- */
-export function determineStarRating(score, stateCode) {
-  const cps = STATE_CUTPOINTS[stateCode];
-  if (!cps) return null;
-  for (let i = 0; i < cps.length; i++) {
-    if (score <= cps[i]) {
-      return 5 - i;
-    }
-  }
-  return 1;
+  return basePoints + extra;
 }
