@@ -89,39 +89,44 @@ function App() {
     onDrop: files => files[0] && extractTextFromPDF(files[0]),
   });
 
-  const generatePOC = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/generatePOC', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          inputText,
-          fTags: fTags.split(',').map(f => f.trim()),
-          selectedState
-        }),
-      });
-      const data = await res.json();
-      if (!data.result) throw new Error(data.error || 'No result');
-      const docRef = await addDoc(
-        collection(db, 'users', user.uid, 'pocs'),
-        {
-          inputText,
-          fTags,
-          result: data.result,
-          selectedState,
-          timestamp: new Date(),
-        }
-      );
-      setResults([{ id: docRef.id, ...data, selectedState }, ...results]);
-      setInputText(''); setFTags('');
-    } catch (err) {
-      console.error(err);
-      alert('Error generating POC: ' + err.message);
-    } finally {
-      setLoading(false);
+const generatePOC = async () => {
+  setLoading(true);
+  try {
+    const res = await fetch('/api/generatePOC', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inputText, fTags: fTags.split(',').map(f => f.trim()) }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error('generatePOC call failed:', res.status, txt);
+      alert(`Server error ${res.status}: see console for details`);
+      return;
     }
-  };
+
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      console.error('JSON parse error, response text:', await res.text());
+      alert('Error parsing server response – check console');
+      return;
+    }
+
+    if (data.result) {
+      // handle success...
+    } else {
+      alert("No 'result' key in response");
+    }
+  } catch (err) {
+    console.error('generatePOC client error:', err);
+    alert('Error generating POC: ' + err.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const generateCarePlan = async (id, txt) => {
     setCarePlanLoading(p => ({ ...p, [id]: true }));
