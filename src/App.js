@@ -63,14 +63,16 @@ function App() {
   const extractTextFromPDF = async (file) => {
     const reader = new FileReader();
     reader.onload = async () => {
-      const arr = new Uint8Array(reader.result);
       const pdfDoc = await pdfjsLib.getDocument({ data: arr }).promise;
-      let full = '';
-      for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const text = await page.getTextContent();
-        full += text.items.map(item => item.str).join(' ') + '\n';
-      }
+console.log('📄 PDF has', pdfDoc.numPages, 'pages');
+
+for (let i = 1; i <= pdfDoc.numPages; i++) {
+  const page = await pdfDoc.getPage(i);
+  const text = await page.getTextContent();
+  console.log(`Page ${i} has ${text.items.length} text items`);
+  // existing logic to build full string
+}
+
       const tags = [...new Set((full.match(/F\d{3}/g) || []))].join(', ');
       setInputText(full.trim().slice(0, 3000));
       setFTags(tags);
